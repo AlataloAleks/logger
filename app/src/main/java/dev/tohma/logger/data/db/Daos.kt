@@ -99,6 +99,27 @@ interface SettingsDao {
     @Query("SELECT * FROM settings WHERE id = 1")
     fun observe(): Flow<SettingsEntity?>
 
+    @Query("SELECT * FROM settings WHERE id = 1")
+    suspend fun get(): SettingsEntity?
+
     @Upsert
     suspend fun upsert(settings: SettingsEntity)
+}
+
+@Dao
+interface PomodoroPhaseDao {
+    @Insert
+    suspend fun insert(phase: PomodoroPhaseEntity): Long
+
+    @Update
+    suspend fun update(phase: PomodoroPhaseEntity)
+
+    @Query("SELECT * FROM pomodoro_phase WHERE sessionId = :sessionId AND endedAt IS NULL LIMIT 1")
+    suspend fun getOpen(sessionId: Long): PomodoroPhaseEntity?
+
+    @Query("SELECT * FROM pomodoro_phase WHERE endedAt IS NULL LIMIT 1")
+    fun observeOpen(): Flow<PomodoroPhaseEntity?>
+
+    @Query("SELECT * FROM pomodoro_phase WHERE sessionId = :sessionId ORDER BY phaseIndex")
+    suspend fun forSession(sessionId: Long): List<PomodoroPhaseEntity>
 }

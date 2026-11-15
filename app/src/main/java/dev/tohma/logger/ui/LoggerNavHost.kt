@@ -5,6 +5,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.navigation.NavType
@@ -38,7 +39,7 @@ object Routes {
 }
 
 @Composable
-fun LoggerNavHost() {
+fun LoggerNavHost(openRunningRequests: Int) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -54,6 +55,12 @@ fun LoggerNavHost() {
             if (result == SnackbarResult.ActionPerformed) nav.navigate(Routes.editSession(stopped.sessionId))
         }
     }
+
+    LaunchedEffect(openRunningRequests) {
+        if (openRunningRequests > 0) nav.navigate(Routes.RUNNING) { launchSingleTop = true }
+    }
+
+    RecoveryDialog(onStopped = onStopped)
 
     NavHost(navController = nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {

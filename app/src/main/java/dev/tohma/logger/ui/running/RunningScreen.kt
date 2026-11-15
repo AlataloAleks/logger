@@ -50,7 +50,11 @@ import dev.tohma.logger.domain.StoppedSession
 import dev.tohma.logger.domain.formatClock
 import dev.tohma.logger.ui.common.ColorDot
 import dev.tohma.logger.ui.common.ConfirmDialog
-import dev.tohma.logger.ui.common.elapsedSeconds
+import dev.tohma.logger.domain.RunningSession
+import dev.tohma.logger.ui.common.modeLabel
+import dev.tohma.logger.system.SessionEffects
+import dev.tohma.logger.ui.common.displaySeconds
+import dev.tohma.logger.ui.common.rememberNow
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,7 +68,7 @@ import kotlinx.coroutines.launch
 /** null = still loading; [RunningState.None] = nothing is running. */
 sealed interface RunningState {
     data object None : RunningState
-    data class Active(val row: SessionRow) : RunningState
+    data class Active(val running: RunningSession) : RunningState
 }
 
 @OptIn(FlowPreview::class)
@@ -72,8 +76,9 @@ class RunningViewModel(
     private val engine: SessionEngine,
     /** Outlives this ViewModel, so a pending edit can still be saved after the screen closes. */
     private val appScope: CoroutineScope,
+    private val effects: SessionEffects,
 ) : ViewModel() {
-    val state: StateFlow<RunningState?> = engine.running
+    val state: StateFlow<RunningState?> = engine.runningSession
         .map { if (it == null) RunningState.None else RunningState.Active(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -105,6 +110,10 @@ class RunningViewModel(
         }
     }
 
+    fun expireDue() {
+        appScope.launch { effects.expireDue() }
+    }
+
     fun discard(onDone: () -> Unit) {
         viewModelScope.launch {
             descriptionEdits.value = null
@@ -121,7 +130,7 @@ class RunningViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val container = (this[APPLICATION_KEY] as LoggerApp).container
-                RunningViewModel(container.sessionEngine, container.appScope)
+                RunningViewModel(container.sessionEngine, container.appScope, container.sessionEffects)
             }
         }
     }
@@ -141,7 +150,8 @@ fun RunningScreen(
     // Leave when the session was stopped elsewhere (for example from the notification later on).
     LaunchedEffect(state) { if (state == RunningState.None) onClose() }
 
-    val row = (state as? RunningState.Active)?.row ?: return
+    val running = (state as? RunningState.Active)?.running ?: return
+    val row = running.row
 
     Scaffold(
         topBar = {
@@ -179,11 +189,16 @@ fun RunningScreen(
                 Text(row.activityName, style = MaterialTheme.typography.titleLarge)
             }
             Spacer(Modifier.height(16.dp))
-            Text(
-                formatClock(elapsedSeconds(row.session.startedAt)),
-                fontSize = 64.sp,
-                fontFamily = FontFamily.Monospace,
-            )
+            Text(formatClock(displaySeconds(running)), fontSize = 64.sp, fontFamily = FontFamily.Monospace)
+            modeLabel(running)?.let {
+                Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            val planned = running.endsAt
+            if (planned != null) {
+                // Backup for a missed alarm: handle the deadline shortly after it passed.
+                val overdue = rememberNow().value - planned > 3_000
+                LaunchedEffect(overdue) { if (overdue) viewModel.expireDue() }
+            }
             Spacer(Modifier.height(32.dp))
             // Local text state: the DB copy lags behind by the debounce and must not overwrite typing.
             var description by remember(row.session.id) { mutableStateOf(row.session.description ?: "") }
@@ -205,7 +220,11 @@ fun RunningScreen(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                "Time keeps counting if you leave the app.",
+                when {
+                    running.phase != null -> "You'll get an alert at every work and break change."
+                    planned != null -> "You'll get an alert when the timer ends."
+                    else -> "Time keeps counting if you leave the app."
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),

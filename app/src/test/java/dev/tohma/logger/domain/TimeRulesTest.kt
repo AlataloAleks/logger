@@ -49,4 +49,11 @@ class TimeRulesTest {
         assertEquals("12m", formatDuration(12 * 60 + 30))
         assertEquals("1h 05m", formatDuration(3900))
     }
+
+    @Test
+    fun pomodoroPhasePlan() {
+        val s = dev.tohma.logger.data.db.SettingsEntity() // 25 / 5 / 15 every 4
+        assertEquals(listOf(1500L, 300L, 1500L, 300L, 1500L, 300L, 1500L, 900L, 1500L), (0..8).map { s.pomodoroPhaseSeconds(it) })
+        assertEquals("Break · round 4", phaseLabel(7))
+    }
 }

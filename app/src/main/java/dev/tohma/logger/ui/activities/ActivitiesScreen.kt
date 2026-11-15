@@ -16,6 +16,18 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
+import android.Manifest
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import dev.tohma.logger.LoggerApp
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
@@ -25,6 +37,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Button
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SnackbarHost
@@ -73,7 +87,13 @@ private sealed interface DialogState {
     data class DeleteActivity(val activity: ActivityEntity, val sessionCount: Int) : DialogState
     data object Groups : DialogState
     data class Start(val activity: ActivityEntity) : DialogState
-    data class Switch(val activity: ActivityEntity, val description: String?, val runningName: String) : DialogState
+    data class Switch(
+        val activity: ActivityEntity,
+        val description: String?,
+        val timerSeconds: Long?,
+        val pomodoro: Pomodoro?,
+        val runningName: String,
+    ) : DialogState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,8 +107,27 @@ fun ActivitiesScreen(
     viewModel: ActivitiesViewModel = viewModel(factory = ActivitiesViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val pomodoroDefaults by viewModel.pomodoroDefaults.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<DialogState?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
+
+    // Ask for notification permission (Android 13+) the first time a session starts; start either way.
+    val notifications = (LocalContext.current.applicationContext as LoggerApp).container.notifications
+    var afterPermission by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {
+        afterPermission?.invoke()
+        afterPermission = null
+    }
+    val withNotificationPermission: (() -> Unit) -> Unit = { action ->
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notifications.canPost()) {
+            afterPermission = action
+            permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            action()
+        }
+    }
+    var notificationsOff by remember { mutableStateOf(false) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { notificationsOff = !notifications.canPost() }
 
     val onDelete: (ActivityEntity) -> Unit = { activity ->
         viewModel.loadSessionCount(activity) { count -> dialog = DialogState.DeleteActivity(activity, count) }
@@ -131,6 +170,7 @@ fun ActivitiesScreen(
         state.running?.let { row ->
             RunningBanner(row, onClick = onOpenRunning, onStop = { viewModel.stop(onStopped) })
         }
+        if (notificationsOff && state.activityCount > 0) NotificationsOffCard()
         if (!state.loading && state.activityCount == 0) {
             Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
@@ -207,15 +247,27 @@ fun ActivitiesScreen(
         )
         is DialogState.Start -> StartSheet(
             activity = d.activity,
-            onStartStopwatch = { description ->
-                viewModel.startStopwatch(
-                    d.activity,
-                    description,
-                    onStarted = { dialog = null; onOpenRunning() },
-                    onConflict = {
-                        dialog = DialogState.Switch(d.activity, description, state.running?.activityName ?: "another activity")
-                    },
-                )
+            initialTimerSeconds = viewModel.lastTimerSeconds,
+            pomodoroDefaults = pomodoroDefaults,
+            onStart = { description, timerSeconds, pomodoro ->
+                withNotificationPermission {
+                    viewModel.start(
+                        d.activity,
+                        description,
+                        timerSeconds,
+                        pomodoro,
+                        onStarted = { dialog = null; onOpenRunning() },
+                        onConflict = {
+                            dialog = DialogState.Switch(
+                                d.activity,
+                                description,
+                                timerSeconds,
+                                pomodoro,
+                                state.running?.row?.activityName ?: "another activity",
+                            )
+                        },
+                    )
+                }
             },
             onManualEntry = { description -> dialog = null; onManualEntry(d.activity.id, description) },
             onDismiss = { dialog = null },
@@ -225,9 +277,11 @@ fun ActivitiesScreen(
             title = { Text("Switch activity?") },
             text = { Text("\"${d.runningName}\" is running. Stop it and start \"${d.activity.name}\"?") },
             confirmButton = {
-                TextButton(onClick = { viewModel.switchTo(d.activity, d.description) { dialog = null; onOpenRunning() } }) {
-                    Text("Switch")
-                }
+                TextButton(
+                    onClick = {
+                        viewModel.switchTo(d.activity, d.description, d.timerSeconds, d.pomodoro) { dialog = null; onOpenRunning() }
+                    },
+                ) { Text("Switch") }
             },
             dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
         )
@@ -235,18 +289,31 @@ fun ActivitiesScreen(
     }
 }
 
-private enum class StartMode(val label: String) { STOPWATCH("Stopwatch"), MANUAL("Manual entry") }
+private enum class StartMode(val label: String) {
+    STOPWATCH("Stopwatch"), TIMER("Timer"), POMODORO("Pomodoro"), MANUAL("Manual"),
+}
+
+private val TIMER_PRESETS_MIN = listOf(1, 2, 5, 10, 25)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun StartSheet(
     activity: ActivityEntity,
-    onStartStopwatch: (description: String?) -> Unit,
+    initialTimerSeconds: Long,
+    pomodoroDefaults: Pomodoro,
+    onStart: (description: String?, timerSeconds: Long?, pomodoro: Pomodoro?) -> Unit,
     onManualEntry: (description: String?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var mode by remember { mutableStateOf(StartMode.STOPWATCH) }
     var description by remember { mutableStateOf("") }
+    var timerMin by remember { mutableStateOf((initialTimerSeconds / 60).toString()) }
+    var timerSec by remember { mutableStateOf((initialTimerSeconds % 60).toString()) }
+    val timerSeconds = (timerMin.toLongOrNull() ?: 0) * 60 + (timerSec.toLongOrNull() ?: 0)
+    var workMin by remember { mutableStateOf(pomodoroDefaults.workMin.toString()) }
+    var breakMin by remember { mutableStateOf(pomodoroDefaults.breakMin.toString()) }
+    val pomodoro = Pomodoro(workMin.toIntOrNull() ?: 0, breakMin.toIntOrNull() ?: 0)
+
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
@@ -257,9 +324,35 @@ private fun StartSheet(
                 Spacer(Modifier.size(12.dp))
                 Text(activity.name, style = MaterialTheme.typography.titleLarge)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                StartMode.entries.forEach { m ->
+            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                items(StartMode.entries) { m ->
                     FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
+                }
+            }
+            if (mode == StartMode.POMODORO) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DigitsField("Work min", workMin, Modifier.weight(1f)) { workMin = it }
+                    DigitsField("Break min", breakMin, Modifier.weight(1f)) { breakMin = it }
+                }
+                Text(
+                    "Runs until you stop it. Every 4th break is a long break.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (mode == StartMode.TIMER) {
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(TIMER_PRESETS_MIN) { min ->
+                        FilterChip(
+                            selected = timerSeconds == min * 60L,
+                            onClick = { timerMin = min.toString(); timerSec = "0" },
+                            label = { Text("$min min") },
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    DigitsField("Min", timerMin, Modifier.weight(1f)) { timerMin = it }
+                    DigitsField("Sec", timerSec, Modifier.weight(1f)) { timerSec = it }
                 }
             }
             OutlinedTextField(
@@ -269,19 +362,39 @@ private fun StartSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             Button(
+                enabled = when (mode) {
+                    StartMode.TIMER -> timerSeconds > 0
+                    StartMode.POMODORO -> pomodoro.workMin > 0 && pomodoro.breakMin > 0
+                    else -> true
+                },
                 onClick = {
                     val d = description.takeIf { it.isNotBlank() }
-                    if (mode == StartMode.STOPWATCH) onStartStopwatch(d) else onManualEntry(d)
+                    when (mode) {
+                        StartMode.STOPWATCH -> onStart(d, null, null)
+                        StartMode.TIMER -> onStart(d, timerSeconds, null)
+                        StartMode.POMODORO -> onStart(d, null, pomodoro)
+                        StartMode.MANUAL -> onManualEntry(d)
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
-                Text(if (mode == StartMode.STOPWATCH) "Start" else "Continue")
+                Text(if (mode == StartMode.MANUAL) "Continue" else "Start")
             }
         }
     }
 }
 
-
+@Composable
+private fun DigitsField(label: String, value: String, modifier: Modifier, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { v -> if (v.length <= 3 && v.all(Char::isDigit)) onChange(v) },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        modifier = modifier,
+    )
+}
 
 @Composable
 private fun ActivityRow(
@@ -475,5 +588,29 @@ private fun GroupsDialog(
             onConfirm = { onDelete(group); deleting = null },
             onDismiss = { deleting = null },
         )
+    }
+}
+
+@Composable
+private fun NotificationsOffCard() {
+    val context = LocalContext.current
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+    ) {
+        Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Notifications are off, so timer alerts won't appear.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = {
+                context.startActivity(
+                    Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName),
+                )
+            }) { Text("Turn on") }
+        }
     }
 }

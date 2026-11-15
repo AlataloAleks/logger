@@ -21,6 +21,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun activityGroupDao(): ActivityGroupDao
     abstract fun sessionDao(): SessionDao
     abstract fun settingsDao(): SettingsDao
+    abstract fun pomodoroPhaseDao(): PomodoroPhaseDao
 
     companion object {
         fun create(context: Context): AppDatabase =

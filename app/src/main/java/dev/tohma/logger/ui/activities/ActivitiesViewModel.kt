@@ -6,12 +6,17 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.tohma.logger.LoggerApp
+import dev.tohma.logger.UiPrefs
 import dev.tohma.logger.data.ActivityRepository
 import dev.tohma.logger.data.NameError
 import dev.tohma.logger.data.db.ActivityEntity
 import dev.tohma.logger.data.db.ActivityGroupEntity
 import dev.tohma.logger.data.db.SessionEntity
-import dev.tohma.logger.data.db.SessionRow
+import dev.tohma.logger.data.db.SettingsEntity
+import dev.tohma.logger.domain.RunningSession
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import dev.tohma.logger.domain.SessionEngine
 import dev.tohma.logger.domain.StartResult
 import dev.tohma.logger.domain.StoppedSession
@@ -22,6 +27,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** Pomodoro lengths chosen when starting one. */
+data class Pomodoro(val workMin: Int, val breakMin: Int)
+
 data class ActivitySection(val group: ActivityGroupEntity?, val activities: List<ActivityEntity>)
 
 data class ActivitiesUiState(
@@ -31,17 +39,20 @@ data class ActivitiesUiState(
     val groups: List<ActivityGroupEntity> = emptyList(),
     val showArchived: Boolean = false,
     val activityCount: Int = 0,
-    val running: SessionRow? = null,
+    val running: RunningSession? = null,
 )
 
 class ActivitiesViewModel(
     private val repository: ActivityRepository,
     private val engine: SessionEngine,
+    private val prefs: UiPrefs,
+    private val settings: Flow<SettingsEntity>,
+    private val saveSettings: suspend (SettingsEntity) -> Unit,
 ) : ViewModel() {
     private val showArchived = MutableStateFlow(false)
 
     val state: StateFlow<ActivitiesUiState> =
-        combine(repository.activities, repository.groups, showArchived, engine.running) { activities, groups, showArchived, running ->
+        combine(repository.activities, repository.groups, showArchived, engine.runningSession) { activities, groups, showArchived, running ->
             val active = activities.filterNot { it.archived }
             val groupIds = groups.map { it.id }.toSet()
             val sections = buildList {
@@ -64,25 +75,55 @@ class ActivitiesViewModel(
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivitiesUiState())
 
-    /** Calls [onConflict] instead of starting when another session is already running. */
-    fun startStopwatch(
+    /** Last timer length used, offered as the default next time. */
+    val lastTimerSeconds: Long get() = prefs.lastTimerSeconds
+
+    /**
+     * Starts a stopwatch, or a timer when [timerSeconds] is given. Calls [onConflict] instead of
+     * starting when another session is already running.
+     */
+    fun start(
         activity: ActivityEntity,
         description: String?,
+        timerSeconds: Long?,
+        pomodoro: Pomodoro?,
         onStarted: () -> Unit,
         onConflict: (SessionEntity) -> Unit,
     ) {
+        timerSeconds?.let { prefs.lastTimerSeconds = it }
         viewModelScope.launch {
-            when (val result = engine.startStopwatch(activity.id, description)) {
+            pomodoro?.let { saveDefaults(it) }
+            when (val result = engine.start(activity.id, description, timerSeconds, pomodoro != null)) {
                 is StartResult.Started -> onStarted()
                 is StartResult.AlreadyRunning -> onConflict(result.running)
             }
         }
     }
 
-    fun switchTo(activity: ActivityEntity, description: String?, onStarted: () -> Unit) {
+    fun switchTo(
+        activity: ActivityEntity,
+        description: String?,
+        timerSeconds: Long?,
+        pomodoro: Pomodoro?,
+        onStarted: () -> Unit,
+    ) {
         viewModelScope.launch {
-            engine.switchTo(activity.id, description)
+            pomodoro?.let { saveDefaults(it) }
+            engine.switchTo(activity.id, description, timerSeconds, pomodoro != null)
             onStarted()
+        }
+    }
+
+    /** Current Pomodoro lengths, offered as defaults when starting one. */
+    val pomodoroDefaults: StateFlow<Pomodoro> = settings
+        .map { Pomodoro(it.pomoWorkMin, it.pomoBreakMin) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, Pomodoro(25, 5))
+
+    /** Pomodoro lengths are settings: the next Pomodoro starts with the same values. */
+    private suspend fun saveDefaults(p: Pomodoro) {
+        val current = settings.first()
+        if (current.pomoWorkMin != p.workMin || current.pomoBreakMin != p.breakMin) {
+            saveSettings(current.copy(pomoWorkMin = p.workMin, pomoBreakMin = p.breakMin))
         }
     }
 
@@ -133,7 +174,13 @@ class ActivitiesViewModel(
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as LoggerApp
-                ActivitiesViewModel(app.container.activityRepository, app.container.sessionEngine)
+                ActivitiesViewModel(
+                    app.container.activityRepository,
+                    app.container.sessionEngine,
+                    app.container.prefs,
+                    app.container.settings,
+                    app.container.database.settingsDao()::upsert,
+                )
             }
         }
     }

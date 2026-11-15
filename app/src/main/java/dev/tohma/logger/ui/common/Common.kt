@@ -28,6 +28,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.tohma.logger.data.db.SessionRow
 import dev.tohma.logger.domain.formatClock
+import dev.tohma.logger.domain.RunningSession
+import dev.tohma.logger.domain.phaseLabel
 import kotlinx.coroutines.delay
 
 @Composable
@@ -88,8 +90,28 @@ fun elapsedSeconds(startedAt: Long): Long {
     return ((now - startedAt) / 1000).coerceAtLeast(0)
 }
 
+/** Seconds left of a timer or Pomodoro phase (never negative), or seconds elapsed for a stopwatch. */
 @Composable
-fun RunningBanner(row: SessionRow, onClick: () -> Unit, onStop: () -> Unit) {
+fun displaySeconds(running: RunningSession): Long {
+    val now = rememberNow().value
+    val end = running.endsAt
+    return if (end != null) {
+        ((end - now + 999) / 1000).coerceAtLeast(0)
+    } else {
+        ((now - running.row.session.startedAt) / 1000).coerceAtLeast(0)
+    }
+}
+
+/** Short mode description: "Timer · 2:00", "Break · round 2", or null for a stopwatch. */
+fun modeLabel(running: RunningSession): String? = when {
+    running.phase != null -> phaseLabel(running.phase.phaseIndex)
+    running.row.session.plannedSeconds != null -> "Timer · ${formatClock(running.row.session.plannedSeconds)}"
+    else -> null
+}
+
+@Composable
+fun RunningBanner(running: RunningSession, onClick: () -> Unit, onStop: () -> Unit) {
+    val row = running.row
     Surface(
         color = MaterialTheme.colorScheme.primaryContainer,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -102,7 +124,7 @@ fun RunningBanner(row: SessionRow, onClick: () -> Unit, onStop: () -> Unit) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(row.activityName, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                row.session.description?.let {
+                listOfNotNull(modeLabel(running), row.session.description).joinToString(" · ").ifEmpty { null }?.let {
                     Text(
                         it,
                         style = MaterialTheme.typography.bodySmall,
@@ -113,7 +135,7 @@ fun RunningBanner(row: SessionRow, onClick: () -> Unit, onStop: () -> Unit) {
             }
             Spacer(Modifier.width(12.dp))
             Text(
-                formatClock(elapsedSeconds(row.session.startedAt)),
+                formatClock(displaySeconds(running)),
                 style = MaterialTheme.typography.titleMedium,
                 fontFamily = FontFamily.Monospace,
             )
