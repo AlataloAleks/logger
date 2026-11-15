@@ -19,8 +19,16 @@ android {
     }
 
     buildTypes {
+        // Debug is the development build: installed side by side with the everyday app and
+        // with its own data, because on-device test runs uninstall it.
+        debug {
+            applicationIdSuffix = ".debug" // app name overridden in src/debug/res
+        }
+        // Release is the everyday build. Signed with the debug key for sideloading;
+        // a real signing key is only needed for publishing.
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 
@@ -43,6 +51,7 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.navigation.compose)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

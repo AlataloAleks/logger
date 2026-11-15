@@ -1,6 +1,5 @@
 package dev.tohma.logger.ui.activities
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -18,12 +17,18 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +60,11 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.tohma.logger.data.NameError
 import dev.tohma.logger.data.db.ActivityEntity
 import dev.tohma.logger.data.db.ActivityGroupEntity
+import dev.tohma.logger.domain.StoppedSession
+import dev.tohma.logger.ui.common.ColorDot
+import dev.tohma.logger.ui.common.ConfirmDialog
+import dev.tohma.logger.ui.common.RunningBanner
+import dev.tohma.logger.ui.common.SectionHeader
 import dev.tohma.logger.ui.theme.ActivityPalette
 
 /** Which dialog is open. Only one at a time. */
@@ -62,11 +72,20 @@ private sealed interface DialogState {
     data class EditActivity(val activity: ActivityEntity?) : DialogState
     data class DeleteActivity(val activity: ActivityEntity, val sessionCount: Int) : DialogState
     data object Groups : DialogState
+    data class Start(val activity: ActivityEntity) : DialogState
+    data class Switch(val activity: ActivityEntity, val description: String?, val runningName: String) : DialogState
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = ActivitiesViewModel.Factory)) {
+fun ActivitiesScreen(
+    snackbarHostState: SnackbarHostState,
+    onOpenRunning: () -> Unit,
+    onOpenHistory: () -> Unit,
+    onManualEntry: (activityId: Long, description: String?) -> Unit,
+    onStopped: (StoppedSession) -> Unit,
+    viewModel: ActivitiesViewModel = viewModel(factory = ActivitiesViewModel.Factory),
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     var dialog by remember { mutableStateOf<DialogState?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -80,6 +99,9 @@ fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = Activi
             TopAppBar(
                 title = { Text("Activities") },
                 actions = {
+                    IconButton(onClick = onOpenHistory) {
+                        Icon(Icons.AutoMirrored.Filled.List, contentDescription = "History")
+                    }
                     Box {
                         IconButton(onClick = { menuOpen = true }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "More options")
@@ -98,14 +120,19 @@ fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = Activi
                 },
             )
         },
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         floatingActionButton = {
             FloatingActionButton(onClick = { dialog = DialogState.EditActivity(null) }) {
                 Icon(Icons.Default.Add, contentDescription = "New activity")
             }
         },
     ) { padding ->
+        Column(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding())) {
+        state.running?.let { row ->
+            RunningBanner(row, onClick = onOpenRunning, onStop = { viewModel.stop(onStopped) })
+        }
         if (!state.loading && state.activityCount == 0) {
-            Box(Modifier.fillMaxSize().padding(padding).padding(32.dp), contentAlignment = Alignment.Center) {
+            Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "No activities yet.\nTap + to create one.",
                     textAlign = TextAlign.Center,
@@ -115,10 +142,7 @@ fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = Activi
         } else {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(
-                    top = padding.calculateTopPadding(),
-                    bottom = padding.calculateBottomPadding() + 88.dp,
-                ),
+                contentPadding = PaddingValues(bottom = padding.calculateBottomPadding() + 88.dp),
             ) {
                 state.sections.forEach { section ->
                     section.group?.let { group ->
@@ -127,7 +151,7 @@ fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = Activi
                     items(section.activities, key = { it.id }) { activity ->
                         ActivityRow(
                             activity = activity,
-                            onClick = { dialog = DialogState.EditActivity(activity) },
+                            onClick = { dialog = DialogState.Start(activity) },
                             onEdit = { dialog = DialogState.EditActivity(activity) },
                             onArchiveToggle = { viewModel.setArchived(activity, true) },
                             onDelete = { onDelete(activity) },
@@ -147,6 +171,7 @@ fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = Activi
                     }
                 }
             }
+        }
         }
     }
 
@@ -180,24 +205,83 @@ fun ActivitiesScreen(viewModel: ActivitiesViewModel = viewModel(factory = Activi
             onDelete = viewModel::deleteGroup,
             onDismiss = { dialog = null },
         )
+        is DialogState.Start -> StartSheet(
+            activity = d.activity,
+            onStartStopwatch = { description ->
+                viewModel.startStopwatch(
+                    d.activity,
+                    description,
+                    onStarted = { dialog = null; onOpenRunning() },
+                    onConflict = {
+                        dialog = DialogState.Switch(d.activity, description, state.running?.activityName ?: "another activity")
+                    },
+                )
+            },
+            onManualEntry = { description -> dialog = null; onManualEntry(d.activity.id, description) },
+            onDismiss = { dialog = null },
+        )
+        is DialogState.Switch -> AlertDialog(
+            onDismissRequest = { dialog = null },
+            title = { Text("Switch activity?") },
+            text = { Text("\"${d.runningName}\" is running. Stop it and start \"${d.activity.name}\"?") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.switchTo(d.activity, d.description) { dialog = null; onOpenRunning() } }) {
+                    Text("Switch")
+                }
+            },
+            dismissButton = { TextButton(onClick = { dialog = null }) { Text("Cancel") } },
+        )
         null -> Unit
     }
 }
 
+private enum class StartMode(val label: String) { STOPWATCH("Stopwatch"), MANUAL("Manual entry") }
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SectionHeader(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 4.dp),
-    )
+private fun StartSheet(
+    activity: ActivityEntity,
+    onStartStopwatch: (description: String?) -> Unit,
+    onManualEntry: (description: String?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var mode by remember { mutableStateOf(StartMode.STOPWATCH) }
+    var description by remember { mutableStateOf("") }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                ColorDot(activity.color, size = 18)
+                Spacer(Modifier.size(12.dp))
+                Text(activity.name, style = MaterialTheme.typography.titleLarge)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StartMode.entries.forEach { m ->
+                    FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
+                }
+            }
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description (optional)") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Button(
+                onClick = {
+                    val d = description.takeIf { it.isNotBlank() }
+                    if (mode == StartMode.STOPWATCH) onStartStopwatch(d) else onManualEntry(d)
+                },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+            ) {
+                Text(if (mode == StartMode.STOPWATCH) "Start" else "Continue")
+            }
+        }
+    }
 }
 
-@Composable
-private fun ColorDot(color: Int, size: Int = 14) {
-    Box(Modifier.size(size.dp).background(Color(color), CircleShape))
-}
+
 
 @Composable
 private fun ActivityRow(
@@ -309,24 +393,6 @@ private fun ActivityEditorDialog(
     )
 }
 
-@Composable
-private fun ConfirmDialog(
-    title: String,
-    text: String,
-    confirmLabel: String,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(title) },
-        text = { Text(text) },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(confirmLabel, color = MaterialTheme.colorScheme.error) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
 
 @Composable
 private fun GroupsDialog(

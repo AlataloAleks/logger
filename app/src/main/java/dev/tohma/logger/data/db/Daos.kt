@@ -2,6 +2,7 @@ package dev.tohma.logger.data.db
 
 import androidx.room.Dao
 import androidx.room.Delete
+import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
@@ -57,7 +58,41 @@ interface SessionDao {
 
     @Insert
     suspend fun insert(session: SessionEntity): Long
+
+    @Update
+    suspend fun update(session: SessionEntity)
+
+    @Query("DELETE FROM session WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT * FROM session WHERE id = :id")
+    suspend fun get(id: Long): SessionEntity?
+
+    @Query("SELECT * FROM session WHERE endedAt IS NULL LIMIT 1")
+    suspend fun getRunning(): SessionEntity?
+
+    @Query("$SESSION_ROW_SELECT WHERE s.endedAt IS NULL LIMIT 1")
+    fun observeRunning(): Flow<SessionRow?>
+
+    @Query("$SESSION_ROW_SELECT ORDER BY s.startedAt DESC")
+    fun observeAll(): Flow<List<SessionRow>>
+
+    @Query("$SESSION_ROW_SELECT WHERE s.id = :id")
+    fun observe(id: Long): Flow<SessionRow?>
+
+    companion object {
+        const val SESSION_ROW_SELECT =
+            "SELECT s.*, a.name AS activityName, a.color AS activityColor " +
+                "FROM session s JOIN activity a ON a.id = s.activityId"
+    }
 }
+
+/** A session together with the activity fields the UI needs. */
+data class SessionRow(
+    @Embedded val session: SessionEntity,
+    val activityName: String,
+    val activityColor: Int,
+)
 
 @Dao
 interface SettingsDao {

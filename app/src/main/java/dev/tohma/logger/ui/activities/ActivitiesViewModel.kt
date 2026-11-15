@@ -10,6 +10,11 @@ import dev.tohma.logger.data.ActivityRepository
 import dev.tohma.logger.data.NameError
 import dev.tohma.logger.data.db.ActivityEntity
 import dev.tohma.logger.data.db.ActivityGroupEntity
+import dev.tohma.logger.data.db.SessionEntity
+import dev.tohma.logger.data.db.SessionRow
+import dev.tohma.logger.domain.SessionEngine
+import dev.tohma.logger.domain.StartResult
+import dev.tohma.logger.domain.StoppedSession
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -26,13 +31,17 @@ data class ActivitiesUiState(
     val groups: List<ActivityGroupEntity> = emptyList(),
     val showArchived: Boolean = false,
     val activityCount: Int = 0,
+    val running: SessionRow? = null,
 )
 
-class ActivitiesViewModel(private val repository: ActivityRepository) : ViewModel() {
+class ActivitiesViewModel(
+    private val repository: ActivityRepository,
+    private val engine: SessionEngine,
+) : ViewModel() {
     private val showArchived = MutableStateFlow(false)
 
     val state: StateFlow<ActivitiesUiState> =
-        combine(repository.activities, repository.groups, showArchived) { activities, groups, showArchived ->
+        combine(repository.activities, repository.groups, showArchived, engine.running) { activities, groups, showArchived, running ->
             val active = activities.filterNot { it.archived }
             val groupIds = groups.map { it.id }.toSet()
             val sections = buildList {
@@ -51,8 +60,35 @@ class ActivitiesViewModel(private val repository: ActivityRepository) : ViewMode
                 groups = groups,
                 showArchived = showArchived,
                 activityCount = activities.size,
+                running = running,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ActivitiesUiState())
+
+    /** Calls [onConflict] instead of starting when another session is already running. */
+    fun startStopwatch(
+        activity: ActivityEntity,
+        description: String?,
+        onStarted: () -> Unit,
+        onConflict: (SessionEntity) -> Unit,
+    ) {
+        viewModelScope.launch {
+            when (val result = engine.startStopwatch(activity.id, description)) {
+                is StartResult.Started -> onStarted()
+                is StartResult.AlreadyRunning -> onConflict(result.running)
+            }
+        }
+    }
+
+    fun switchTo(activity: ActivityEntity, description: String?, onStarted: () -> Unit) {
+        viewModelScope.launch {
+            engine.switchTo(activity.id, description)
+            onStarted()
+        }
+    }
+
+    fun stop(onStopped: (StoppedSession) -> Unit) {
+        viewModelScope.launch { engine.stop()?.let(onStopped) }
+    }
 
     fun toggleShowArchived() {
         showArchived.value = !showArchived.value
@@ -97,7 +133,7 @@ class ActivitiesViewModel(private val repository: ActivityRepository) : ViewMode
         val Factory = viewModelFactory {
             initializer {
                 val app = this[APPLICATION_KEY] as LoggerApp
-                ActivitiesViewModel(app.container.activityRepository)
+                ActivitiesViewModel(app.container.activityRepository, app.container.sessionEngine)
             }
         }
     }
