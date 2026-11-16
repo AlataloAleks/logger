@@ -239,4 +239,24 @@ class SessionEngineTest {
         engine.start(planche, null, pomodoro = true)
         assertEquals(1_000_000L + 50 * min, engine.runningSession.first()!!.endsAt)
     }
+
+    @Test
+    fun startEarlierAddsForgottenTime() = runTest {
+        engine.start(planche, null)
+        now += 25 * min
+        engine.startEarlier(10 * 60)
+        assertEquals(35 * 60L, engine.stop()!!.seconds)
+    }
+
+    @Test
+    fun startEarlierShiftsPomodoroPhases() = runTest {
+        engine.start(planche, null, pomodoro = true)
+        now += 20 * min
+        engine.startEarlier(8 * 60)
+        // Work started 28 min ago, so it ended 3 min ago and the break is in progress.
+        assertEquals(PhaseChange(PhaseType.BREAK, 1, 300), engine.advancePomodoroIfDue())
+        val s = engine.get(engine.stop()!!.sessionId)!!
+        assertEquals(25 * 60L, s.workSeconds)
+        assertEquals(3 * 60L, s.breakSeconds)
+    }
 }

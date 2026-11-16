@@ -120,6 +120,12 @@ interface PomodoroPhaseDao {
     @Query("SELECT * FROM pomodoro_phase WHERE endedAt IS NULL LIMIT 1")
     fun observeOpen(): Flow<PomodoroPhaseEntity?>
 
+    @Query(
+        "UPDATE pomodoro_phase SET startedAt = startedAt - :millis, " +
+            "endedAt = CASE WHEN endedAt IS NULL THEN NULL ELSE endedAt - :millis END WHERE sessionId = :sessionId",
+    )
+    suspend fun shift(sessionId: Long, millis: Long)
+
     @Query("SELECT * FROM pomodoro_phase WHERE sessionId = :sessionId ORDER BY phaseIndex")
     suspend fun forSession(sessionId: Long): List<PomodoroPhaseEntity>
 }

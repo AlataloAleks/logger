@@ -126,6 +126,18 @@ class SessionEngine(
         )
     }
 
+    /**
+     * Moves the running session's start [seconds] earlier, for when tracking was started late.
+     * The whole session shifts, Pomodoro phases included, so a timer or phase also ends earlier.
+     */
+    suspend fun startEarlier(seconds: Long) = db.withTransaction {
+        require(seconds > 0) { "Shift must be positive" }
+        val s = dao.getRunning() ?: return@withTransaction
+        val millis = seconds * 1000
+        dao.update(s.copy(startedAt = s.startedAt - millis, updatedAt = clock()))
+        if (s.mode == SessionMode.POMODORO) phaseDao.shift(s.id, millis)
+    }
+
     suspend fun discardRunning() = db.withTransaction {
         dao.getRunning()?.let { dao.delete(it.id) }
     }

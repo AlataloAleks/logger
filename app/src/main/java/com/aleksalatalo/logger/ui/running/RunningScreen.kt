@@ -1,6 +1,12 @@
 package com.aleksalatalo.logger.ui.running
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -114,6 +120,10 @@ class RunningViewModel(
         appScope.launch { effects.expireDue() }
     }
 
+    fun startEarlier(minutes: Long) {
+        viewModelScope.launch { engine.startEarlier(minutes * 60) }
+    }
+
     fun discard(onDone: () -> Unit) {
         viewModelScope.launch {
             descriptionEdits.value = null
@@ -146,6 +156,7 @@ fun RunningScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     var menuOpen by remember { mutableStateOf(false) }
     var confirmDiscard by remember { mutableStateOf(false) }
+    var startEarlier by remember { mutableStateOf(false) }
 
     // Leave when the session was stopped elsewhere (for example from the notification later on).
     LaunchedEffect(state) { if (state == RunningState.None) onClose() }
@@ -168,6 +179,10 @@ fun RunningScreen(
                             Icon(Icons.Default.MoreVert, contentDescription = "More options")
                         }
                         DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Started earlier…") },
+                                onClick = { menuOpen = false; startEarlier = true },
+                            )
                             DropdownMenuItem(
                                 text = { Text("Discard session") },
                                 onClick = { menuOpen = false; confirmDiscard = true },
@@ -233,6 +248,13 @@ fun RunningScreen(
         }
     }
 
+    if (startEarlier) {
+        StartEarlierDialog(
+            onConfirm = { minutes -> startEarlier = false; viewModel.startEarlier(minutes) },
+            onDismiss = { startEarlier = false },
+        )
+    }
+
     if (confirmDiscard) {
         ConfirmDialog(
             title = "Discard session?",
@@ -242,4 +264,39 @@ fun RunningScreen(
             onDismiss = { confirmDiscard = false },
         )
     }
+}
+
+private val EARLIER_PRESETS_MIN = listOf(5L, 10L, 15L, 30L)
+
+/** Moves the start of the running session back by a number of minutes. */
+@Composable
+private fun StartEarlierDialog(onConfirm: (minutes: Long) -> Unit, onDismiss: () -> Unit) {
+    var minutes by remember { mutableStateOf("10") }
+    val value = minutes.toLongOrNull() ?: 0
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Started earlier") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Add time you spent before starting the session.")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    EARLIER_PRESETS_MIN.forEach { m ->
+                        FilterChip(selected = value == m, onClick = { minutes = m.toString() }, label = { Text("$m") })
+                    }
+                }
+                OutlinedTextField(
+                    value = minutes,
+                    onValueChange = { v -> if (v.length <= 4 && v.all(Char::isDigit)) minutes = v },
+                    label = { Text("Minutes") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = value > 0, onClick = { onConfirm(value) }) { Text("Add $value min") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
