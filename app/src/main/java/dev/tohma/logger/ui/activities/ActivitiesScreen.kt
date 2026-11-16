@@ -28,6 +28,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import dev.tohma.logger.LoggerApp
+import dev.tohma.logger.R
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.material.icons.Icons
@@ -102,6 +104,7 @@ fun ActivitiesScreen(
     snackbarHostState: SnackbarHostState,
     onOpenRunning: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenStats: () -> Unit,
     onManualEntry: (activityId: Long, description: String?) -> Unit,
     onStopped: (StoppedSession) -> Unit,
     viewModel: ActivitiesViewModel = viewModel(factory = ActivitiesViewModel.Factory),
@@ -138,6 +141,9 @@ fun ActivitiesScreen(
             TopAppBar(
                 title = { Text("Activities") },
                 actions = {
+                    IconButton(onClick = onOpenStats) {
+                        Icon(painterResource(R.drawable.ic_stats), contentDescription = "Statistics")
+                    }
                     IconButton(onClick = onOpenHistory) {
                         Icon(Icons.AutoMirrored.Filled.List, contentDescription = "History")
                     }
