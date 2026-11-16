@@ -46,7 +46,9 @@ class TimeRulesTest {
     @Test
     fun formatsDuration() {
         assertEquals("45s", formatDuration(45))
-        assertEquals("12m", formatDuration(12 * 60 + 30))
+        assertEquals("1m 05s", formatDuration(65))
+        assertEquals("12m 30s", formatDuration(12 * 60 + 30))
+        assertEquals("12m", formatDuration(12 * 60))
         assertEquals("1h 05m", formatDuration(3900))
     }
 

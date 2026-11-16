@@ -23,13 +23,18 @@ fun formatClock(totalSeconds: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
 }
 
-/** Compact style: 45s, 12m, 1h 05m. Used in lists and totals. */
+/**
+ * Compact style: 45s, 1m 05s, 12m, 1h 05m. Seconds are kept under an hour, because short
+ * activities (e.g. holds that grow by 5 s a day) would otherwise look unchanged.
+ */
 fun formatDuration(totalSeconds: Long): String {
     val s = totalSeconds.coerceAtLeast(0)
     val h = s / 3600
     val m = (s % 3600) / 60
+    val sec = s % 60
     return when {
         h > 0 -> "%dh %02dm".format(h, m)
+        m > 0 && sec > 0 -> "%dm %02ds".format(m, sec)
         m > 0 -> "${m}m"
         else -> "${s}s"
     }
