@@ -123,3 +123,7 @@ The original requirements and design decisions are in [docs/PLAN.md](docs/PLAN.m
 ./gradlew testDebugUnitTest            # time rules and statistics (JVM)
 ./gradlew connectedDebugAndroidTest    # session engine, repository, backup (needs a device)
 ```
+
+## License
+
+[MIT](LICENSE)
