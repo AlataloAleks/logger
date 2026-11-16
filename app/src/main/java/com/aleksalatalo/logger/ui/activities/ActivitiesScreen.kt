@@ -28,6 +28,14 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.aleksalatalo.logger.LoggerApp
+import com.aleksalatalo.logger.domain.ActivityLevel
+import com.aleksalatalo.logger.domain.NextLevel
+import com.aleksalatalo.logger.domain.activityLevel
+import com.aleksalatalo.logger.domain.formatDuration
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.aleksalatalo.logger.R
 import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.shape.CircleShape
@@ -112,6 +120,14 @@ fun ActivitiesScreen(
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pomodoroDefaults by viewModel.pomodoroDefaults.collectAsStateWithLifecycle()
+    val levels by viewModel.levels.collectAsStateWithLifecycle()
+    val haptics = LocalHapticFeedback.current
+    LaunchedEffect(Unit) {
+        viewModel.levelUps.collect { message ->
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            snackbarHostState.showSnackbar(message)
+        }
+    }
     var dialog by remember { mutableStateOf<DialogState?>(null) }
     var menuOpen by remember { mutableStateOf(false) }
 
@@ -202,6 +218,7 @@ fun ActivitiesScreen(
                     items(section.activities, key = { it.id }) { activity ->
                         ActivityRow(
                             activity = activity,
+                            level = levels[activity.id] ?: NO_TIME_LEVEL,
                             onClick = { dialog = DialogState.Start(activity) },
                             onEdit = { dialog = DialogState.EditActivity(activity) },
                             onArchiveToggle = { viewModel.setArchived(activity, true) },
@@ -214,6 +231,7 @@ fun ActivitiesScreen(
                     items(state.archived, key = { it.id }) { activity ->
                         ActivityRow(
                             activity = activity,
+                            level = levels[activity.id] ?: NO_TIME_LEVEL,
                             onClick = { dialog = DialogState.EditActivity(activity) },
                             onEdit = { dialog = DialogState.EditActivity(activity) },
                             onArchiveToggle = { viewModel.setArchived(activity, false) },
@@ -407,9 +425,34 @@ private fun DigitsField(label: String, value: String, modifier: Modifier, onChan
     )
 }
 
+private val NO_TIME_LEVEL = activityLevel(totalSeconds = 0, practiceDays = 0)
+
+private fun nextLevelText(level: ActivityLevel): String = when (val next = level.next) {
+    null -> "Max level"
+    is NextLevel.Time -> "Next level in ${formatDuration(next.seconds)}"
+    is NextLevel.Days -> "Next level in ${next.days} practice ${if (next.days == 1) "day" else "days"}"
+}
+
+/** Level number inside a ring that fills towards the next level, in the activity's color. */
+@Composable
+private fun LevelBadge(color: Int, level: ActivityLevel) {
+    val c = Color(color)
+    Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {
+        CircularProgressIndicator(
+            progress = { level.progress },
+            modifier = Modifier.fillMaxSize(),
+            color = c,
+            trackColor = c.copy(alpha = 0.2f),
+            strokeWidth = 3.dp,
+        )
+        Text(level.level.toString(), style = MaterialTheme.typography.labelMedium)
+    }
+}
+
 @Composable
 private fun ActivityRow(
     activity: ActivityEntity,
+    level: ActivityLevel,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onArchiveToggle: () -> Unit,
@@ -418,8 +461,9 @@ private fun ActivityRow(
     var menuOpen by remember { mutableStateOf(false) }
     ListItem(
         modifier = Modifier.clickable(onClick = onClick).alpha(if (activity.archived) 0.6f else 1f),
-        leadingContent = { ColorDot(activity.color) },
+        leadingContent = { LevelBadge(activity.color, level) },
         headlineContent = { Text(activity.name) },
+        supportingContent = { Text(nextLevelText(level)) },
         trailingContent = {
             Box {
                 IconButton(onClick = { menuOpen = true }) {

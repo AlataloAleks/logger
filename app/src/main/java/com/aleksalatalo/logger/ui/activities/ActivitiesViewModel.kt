@@ -14,7 +14,12 @@ import com.aleksalatalo.logger.data.db.ActivityGroupEntity
 import com.aleksalatalo.logger.data.db.SessionEntity
 import com.aleksalatalo.logger.data.db.SettingsEntity
 import com.aleksalatalo.logger.domain.RunningSession
+import com.aleksalatalo.logger.domain.ActivityLevel
+import com.aleksalatalo.logger.domain.activityLevels
+import com.aleksalatalo.logger.domain.dayEntries
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import com.aleksalatalo.logger.domain.SessionEngine
@@ -125,6 +130,28 @@ class ActivitiesViewModel(
         if (current.pomoWorkMin != p.workMin || current.pomoBreakMin != p.breakMin) {
             saveSettings(current.copy(pomoWorkMin = p.workMin, pomoBreakMin = p.breakMin))
         }
+    }
+
+    /** Level of every activity; activities without tracked time are level 1. */
+    val levels: StateFlow<Map<Long, ActivityLevel>> = combine(engine.history, settings) { rows, s ->
+        activityLevels(dayEntries(rows.map { it.session }, s))
+    }.onEach(::detectLevelUp).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
+
+    /** "Planche reached level 12", emitted when one activity's level rises. */
+    val levelUps = MutableSharedFlow<String>(extraBufferCapacity = 1)
+
+    /** Kept across re-subscriptions, so a level-up that happened on another screen is still noticed. */
+    private var previousLevels: Map<Long, ActivityLevel>? = null
+
+    private suspend fun detectLevelUp(current: Map<Long, ActivityLevel>) {
+        val previous = previousLevels
+        previousLevels = current
+        if (previous == null) return
+        val ups = current.filter { (id, l) -> l.level > (previous[id]?.level ?: 1) }
+        // Several at once means an import or bulk change, not something to celebrate.
+        val (id, level) = ups.entries.singleOrNull() ?: return
+        val name = repository.activities.first().firstOrNull { it.id == id }?.name ?: return
+        levelUps.tryEmit("$name reached level ${level.level}")
     }
 
     fun stop(onStopped: (StoppedSession) -> Unit) {
