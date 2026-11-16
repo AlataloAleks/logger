@@ -70,8 +70,8 @@ Two variants can be installed side by side:
 
 | Variant | App name | Package | Use |
 |---|---|---|---|
-| `release` | Logger | `dev.tohma.logger` | everyday use |
-| `debug` | Logger dev | `dev.tohma.logger.debug` | development; on-device tests uninstall it and wipe its data |
+| `release` | Logger | `com.aleksalatalo.logger` | everyday use |
+| `debug` | Logger dev | `com.aleksalatalo.logger.debug` | development; on-device tests uninstall it and wipe its data |
 
 ## Permissions
 
@@ -108,7 +108,7 @@ Compose screens -> ViewModels -> SessionEngine / ActivityRepository -> Room
 - Statistics are computed on demand from session rows by pure functions in `domain/Stats.kt`.
 
 ```
-app/src/main/java/dev/tohma/logger/
+app/src/main/java/com/aleksalatalo/logger/
   data/      Room entities and DAOs, activity repository, JSON backup
   domain/    session engine, Pomodoro rules, time and statistics calculations
   system/    notifications, alarms, receivers, widgets

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.tohma.logger"
+    namespace = "com.aleksalatalo.logger"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "dev.tohma.logger"
+        applicationId = "com.aleksalatalo.logger"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
