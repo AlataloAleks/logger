@@ -8,7 +8,7 @@ import dev.tohma.logger.LoggerApp
 import kotlinx.coroutines.launch
 
 /** Runs [block] on the app scope while keeping the receiver alive until it finishes. */
-private fun BroadcastReceiver.runAsync(context: Context, block: suspend AppContainer.() -> Unit) {
+internal fun BroadcastReceiver.runAsync(context: Context, block: suspend AppContainer.() -> Unit) {
     val pending = goAsync()
     val container = (context.applicationContext as LoggerApp).container
     container.appScope.launch {

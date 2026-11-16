@@ -22,6 +22,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sessionDao(): SessionDao
     abstract fun settingsDao(): SettingsDao
     abstract fun pomodoroPhaseDao(): PomodoroPhaseDao
+    abstract fun backupDao(): dev.tohma.logger.data.BackupDao
 
     companion object {
         fun create(context: Context): AppDatabase =

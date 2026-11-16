@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Updated hourly so the grid moves on to a new day without the app running. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:configure="dev.tohma.logger.ui.WidgetConfigActivity"
+    android:description="@string/widget_heatmap_description"
+    android:initialLayout="@layout/widget_heatmap"
+    android:previewLayout="@layout/widget_heatmap_preview"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="3600000"
+    android:widgetCategory="home_screen"
+    android:widgetFeatures="reconfigurable|configuration_optional" />

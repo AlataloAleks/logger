@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">Logger</string>
+    <string name="widget_running_description">Running session with Stop, or quick start for your most used activities</string>
+    <string name="widget_heatmap_description">Recent days and current streak for one activity or all</string>
 </resources>

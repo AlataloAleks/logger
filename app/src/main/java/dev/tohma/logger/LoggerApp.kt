@@ -9,6 +9,12 @@ import dev.tohma.logger.domain.SessionEngine
 import dev.tohma.logger.system.SessionAlarms
 import dev.tohma.logger.system.SessionEffects
 import dev.tohma.logger.system.SessionNotifications
+import dev.tohma.logger.system.Widgets
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +32,7 @@ class LoggerApp : Application() {
         // Must be read before the effects re-post the notification below.
         container.runningNotificationWasShowing = container.notifications.isRunningNotificationShowing()
         container.sessionEffects.start(container.appScope)
+        container.startWidgetUpdates()
     }
 }
 
@@ -46,6 +53,20 @@ class AppContainer(context: Context, val database: AppDatabase) {
 
     /** Settings with defaults when the row has not been written yet. */
     val settings: Flow<SettingsEntity> = database.settingsDao().observe().map { it ?: SettingsEntity() }
+
+    val backup = dev.tohma.logger.data.Backup(database)
+
+    val widgets = Widgets(context, sessionEngine, activityRepository, settings)
+
+    /** Re-renders the home-screen widgets whenever sessions, activities or settings change. */
+    @OptIn(FlowPreview::class)
+    fun startWidgetUpdates() {
+        appScope.launch {
+            combine(sessionEngine.runningSession, sessionEngine.history, activityRepository.activities, settings) { _, _, _, _ -> }
+                .debounce(300)
+                .collectLatest { if (widgets.hasAny()) widgets.updateAll() }
+        }
+    }
 
     /** Small UI preferences that do not belong in the database. */
     val prefs = UiPrefs(context)

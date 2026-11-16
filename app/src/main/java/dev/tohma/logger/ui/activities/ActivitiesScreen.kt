@@ -105,6 +105,7 @@ fun ActivitiesScreen(
     onOpenRunning: () -> Unit,
     onOpenHistory: () -> Unit,
     onOpenStats: () -> Unit,
+    onOpenSettings: () -> Unit,
     onManualEntry: (activityId: Long, description: String?) -> Unit,
     onStopped: (StoppedSession) -> Unit,
     viewModel: ActivitiesViewModel = viewModel(factory = ActivitiesViewModel.Factory),
@@ -159,6 +160,10 @@ fun ActivitiesScreen(
                             DropdownMenuItem(
                                 text = { Text(if (state.showArchived) "Hide archived" else "Show archived") },
                                 onClick = { menuOpen = false; viewModel.toggleShowArchived() },
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Settings") },
+                                onClick = { menuOpen = false; onOpenSettings() },
                             )
                         }
                     }

@@ -39,6 +39,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import dev.tohma.logger.LoggerApp
 import dev.tohma.logger.data.db.ActivityEntity
+import dev.tohma.logger.data.db.ActivityGroupEntity
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.automirrored.filled.List
 import dev.tohma.logger.domain.SessionEngine
 import dev.tohma.logger.domain.Stats
 import dev.tohma.logger.domain.computeStats
@@ -60,11 +63,21 @@ import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.roundToInt
 
+sealed interface StatsFilter {
+    data object All : StatsFilter
+    data class Group(val id: Long) : StatsFilter
+    data class Activity(val id: Long) : StatsFilter
+}
+
 data class StatsUiState(
     val loading: Boolean = true,
     val stats: Stats? = null,
     /** Activities that can be filtered on: not archived, or with recorded time. */
     val activities: List<ActivityEntity> = emptyList(),
+    /** Groups with at least one listed activity. */
+    val groups: List<ActivityGroupEntity> = emptyList(),
+    val filter: StatsFilter = StatsFilter.All,
+    /** The selected activity, when filtering by one activity. */
     val selected: ActivityEntity? = null,
     val weekStart: DayOfWeek = DayOfWeek.MONDAY,
 )
@@ -74,26 +87,35 @@ class StatsViewModel(
     repository: ActivityRepository,
     settings: Flow<SettingsEntity>,
 ) : ViewModel() {
-    private val selectedId = MutableStateFlow<Long?>(null)
+    private val filter = MutableStateFlow<StatsFilter>(StatsFilter.All)
 
     val state: StateFlow<StatsUiState> =
-        combine(engine.history, repository.activities, settings, selectedId) { rows, activities, s, selected ->
+        combine(engine.history, repository.activities, repository.groups, settings, filter) { rows, activities, groups, s, f ->
             val entries = dayEntries(rows.map { it.session }, s)
             val withTime = entries.map { it.activityId }.toSet()
             val weekStart = DayOfWeek.of(s.weekStart)
             val today = logicalDate(System.currentTimeMillis(), ZoneId.systemDefault().id, s.dayStartHour)
-            val filtered = if (selected == null) entries else entries.filter { it.activityId == selected }
+            // A group includes its archived activities, so their history still counts.
+            val included: Set<Long>? = when (f) {
+                StatsFilter.All -> null
+                is StatsFilter.Group -> activities.filter { it.groupId == f.id }.map { it.id }.toSet()
+                is StatsFilter.Activity -> setOf(f.id)
+            }
+            val filtered = if (included == null) entries else entries.filter { it.activityId in included }
+            val listed = activities.filter { !it.archived || it.id in withTime }
             StatsUiState(
                 loading = false,
                 stats = computeStats(filtered, today, weekStart),
-                activities = activities.filter { !it.archived || it.id in withTime },
-                selected = activities.firstOrNull { it.id == selected },
+                activities = listed,
+                groups = groups.filter { g -> listed.any { it.groupId == g.id } },
+                filter = f,
+                selected = (f as? StatsFilter.Activity)?.let { a -> activities.firstOrNull { it.id == a.id } },
                 weekStart = weekStart,
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsUiState())
 
-    fun select(activityId: Long?) {
-        selectedId.value = activityId
+    fun select(f: StatsFilter) {
+        filter.value = f
     }
 
     companion object {
@@ -145,12 +167,24 @@ fun StatsScreen(onBack: () -> Unit, viewModel: StatsViewModel = viewModel(factor
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     item {
-                        FilterChip(selected = state.selected == null, onClick = { viewModel.select(null) }, label = { Text("All") })
+                        FilterChip(
+                            selected = state.filter == StatsFilter.All,
+                            onClick = { viewModel.select(StatsFilter.All) },
+                            label = { Text("All") },
+                        )
                     }
-                    items(state.activities, key = { it.id }) { a ->
+                    items(state.groups, key = { "g${it.id}" }) { g ->
+                        FilterChip(
+                            selected = state.filter == StatsFilter.Group(g.id),
+                            onClick = { viewModel.select(StatsFilter.Group(g.id)) },
+                            label = { Text(g.name) },
+                            leadingIcon = { Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Group", Modifier.size(16.dp)) },
+                        )
+                    }
+                    items(state.activities, key = { "a${it.id}" }) { a ->
                         FilterChip(
                             selected = state.selected?.id == a.id,
-                            onClick = { viewModel.select(a.id) },
+                            onClick = { viewModel.select(StatsFilter.Activity(a.id)) },
                             label = { Text(a.name) },
                             leadingIcon = { ColorDot(a.color, size = 10) },
                         )

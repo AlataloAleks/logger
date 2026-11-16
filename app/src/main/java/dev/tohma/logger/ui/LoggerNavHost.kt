@@ -19,6 +19,7 @@ import dev.tohma.logger.ui.activities.ActivitiesScreen
 import dev.tohma.logger.ui.history.HistoryScreen
 import dev.tohma.logger.ui.running.RunningScreen
 import dev.tohma.logger.ui.sessions.SessionEditorScreen
+import dev.tohma.logger.ui.settings.SettingsScreen
 import dev.tohma.logger.ui.stats.StatsScreen
 import kotlinx.coroutines.launch
 
@@ -27,6 +28,7 @@ object Routes {
     const val RUNNING = "running"
     const val HISTORY = "history"
     const val STATS = "stats"
+    const val SETTINGS = "settings"
     const val EDITOR = "editor?sessionId={sessionId}&activityId={activityId}&description={description}"
 
     fun editSession(sessionId: Long) = "editor?sessionId=$sessionId"
@@ -71,12 +73,16 @@ fun LoggerNavHost(openRunningRequests: Int) {
                 onOpenRunning = { nav.navigate(Routes.RUNNING) },
                 onOpenHistory = { nav.navigate(Routes.HISTORY) },
                 onOpenStats = { nav.navigate(Routes.STATS) },
+                onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                 onManualEntry = { activityId, description -> nav.navigate(Routes.newManual(activityId, description)) },
                 onStopped = onStopped,
             )
         }
         composable(Routes.RUNNING) {
             RunningScreen(onStopped = onStopped, onClose = { nav.popBackStack() })
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.STATS) {
             StatsScreen(onBack = { nav.popBackStack() })

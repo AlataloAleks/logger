@@ -28,6 +28,40 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".ui.WidgetConfigActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Logger">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <receiver
+            android:name=".system.RunningWidget"
+            android:exported="true"
+            android:label="Logger: running session">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_running_info" />
+        </receiver>
+        <receiver
+            android:name=".system.HeatmapWidget"
+            android:exported="true"
+            android:label="Logger: streak heatmap">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_heatmap_info" />
+        </receiver>
+        <receiver
+            android:name=".system.WidgetStartReceiver"
+            android:exported="false" />
         <receiver
             android:name=".system.TimerAlarmReceiver"
             android:exported="false" />
