@@ -110,6 +110,7 @@ class SessionEditorViewModel(
                 val s = engine.get(sessionId)
                 if (s != null) {
                     zone = ZoneId.of(s.zoneId)
+                    breakSeconds = s.breakSeconds
                     val start = Instant.ofEpochMilli(s.startedAt).atZone(zone)
                     form = EditorForm(
                         activityId = s.activityId,
@@ -131,6 +132,37 @@ class SessionEditorViewModel(
     fun update(transform: (EditorForm) -> EditorForm) {
         form = transform(form)
         error = null
+    }
+
+    /** Pomodoro break time; part of the session's span but not of the edited duration. */
+    private var breakSeconds = 0L
+
+    private fun EditorForm.durationSeconds(): Long =
+        (hours.toLongOrNull() ?: 0) * 3600 + (minutes.toLongOrNull() ?: 0) * 60 + (seconds.toLongOrNull() ?: 0)
+
+    /**
+     * For an existing session, changing the duration keeps the end time and moves the start: the
+     * usual mistake is starting late, not stopping late. New manual entries keep their start.
+     */
+    fun updateDuration(transform: (EditorForm) -> EditorForm) {
+        val before = form
+        val after = transform(before)
+        val startTime = before.startTime
+        form = if (!isNew && startTime != null) {
+            val end = ZonedDateTime.of(before.date, startTime, zone).plusSeconds(before.durationSeconds() + breakSeconds)
+            val start = end.minusSeconds(after.durationSeconds() + breakSeconds)
+            after.copy(date = start.toLocalDate(), startTime = start.toLocalTime())
+        } else {
+            after
+        }
+        error = null
+    }
+
+    /** End time shown under the duration of an existing session. */
+    fun endTime(): ZonedDateTime? {
+        val f = form
+        val startTime = f.startTime ?: return null
+        return ZonedDateTime.of(f.date, startTime, zone).plusSeconds(f.durationSeconds() + breakSeconds)
     }
 
     fun today(): LocalDate = LocalDate.now(zone)
@@ -255,9 +287,18 @@ fun SessionEditorScreen(
 
             Label("Duration")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                NumberField("Hours", form.hours, Modifier.weight(1f)) { v -> viewModel.update { it.copy(hours = v) } }
-                NumberField("Min", form.minutes, Modifier.weight(1f)) { v -> viewModel.update { it.copy(minutes = v) } }
-                NumberField("Sec", form.seconds, Modifier.weight(1f)) { v -> viewModel.update { it.copy(seconds = v) } }
+                NumberField("Hours", form.hours, Modifier.weight(1f)) { v -> viewModel.updateDuration { it.copy(hours = v) } }
+                NumberField("Min", form.minutes, Modifier.weight(1f)) { v -> viewModel.updateDuration { it.copy(minutes = v) } }
+                NumberField("Sec", form.seconds, Modifier.weight(1f)) { v -> viewModel.updateDuration { it.copy(seconds = v) } }
+            }
+            if (!viewModel.isNew) {
+                viewModel.endTime()?.let { end ->
+                    Text(
+                        "Ends at ${end.format(DateTimeFormatter.ofPattern("HH:mm"))}. Changing the duration moves the start time.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
 
             OutlinedTextField(
