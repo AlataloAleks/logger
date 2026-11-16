@@ -3,6 +3,17 @@
 Minimal Android app for tracking time spent on activities. Agreed during planning (2026-11-15).
 `(default)` marks proposed values that can change without affecting the design.
 
+## Status (2026-11-16)
+
+MVP steps 1-6 are implemented and verified on a device. Added after the plan:
+home-screen widgets (running session / quick start, streak heatmap), group filters for
+statistics and the heatmap widget, and seconds shown in durations under an hour.
+Remaining from step 7: force-stop, day-boundary, notifications-off and archived-activity checks.
+
+Deviations from the plan: compileSdk 37 (required by Compose 1.12); JSON backup uses Android's
+built-in `org.json` instead of kotlinx.serialization; widgets use RemoteViews (needed for a live
+chronometer) instead of Glance.
+
 ## Requirements
 
 - Native Android, single user, offline, no sync. Sideloaded APK for now.
