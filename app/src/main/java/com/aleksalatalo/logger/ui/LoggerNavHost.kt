@@ -23,6 +23,9 @@ import com.aleksalatalo.logger.ui.settings.SettingsScreen
 import com.aleksalatalo.logger.ui.stats.StatsScreen
 import kotlinx.coroutines.launch
 
+/** Request to open the start panel for [activityId]; [nonce] distinguishes repeated taps. */
+data class StartRequest(val activityId: Long, val nonce: Int)
+
 object Routes {
     const val HOME = "home"
     const val RUNNING = "running"
@@ -43,7 +46,11 @@ object Routes {
 }
 
 @Composable
-fun LoggerNavHost(openRunningRequests: Int) {
+fun LoggerNavHost(
+    openRunningRequests: Int,
+    startRequest: StartRequest?,
+    onStartRequestHandled: () -> Unit,
+) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -64,6 +71,11 @@ fun LoggerNavHost(openRunningRequests: Int) {
         if (openRunningRequests > 0) nav.navigate(Routes.RUNNING) { launchSingleTop = true }
     }
 
+    // A widget's quick-start button: show the start panel on the home screen.
+    LaunchedEffect(startRequest) {
+        if (startRequest != null) nav.popBackStack(Routes.HOME, inclusive = false)
+    }
+
     RecoveryDialog(onStopped = onStopped)
 
     NavHost(navController = nav, startDestination = Routes.HOME) {
@@ -76,6 +88,8 @@ fun LoggerNavHost(openRunningRequests: Int) {
                 onOpenSettings = { nav.navigate(Routes.SETTINGS) },
                 onManualEntry = { activityId, description -> nav.navigate(Routes.newManual(activityId, description)) },
                 onStopped = onStopped,
+                startRequest = startRequest,
+                onStartRequestHandled = onStartRequestHandled,
             )
         }
         composable(Routes.RUNNING) {

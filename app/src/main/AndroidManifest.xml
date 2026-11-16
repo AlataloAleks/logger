@@ -60,9 +60,6 @@
                 android:resource="@xml/widget_heatmap_info" />
         </receiver>
         <receiver
-            android:name=".system.WidgetStartReceiver"
-            android:exported="false" />
-        <receiver
             android:name=".system.TimerAlarmReceiver"
             android:exported="false" />
         <receiver

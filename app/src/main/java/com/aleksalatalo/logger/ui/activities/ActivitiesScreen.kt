@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.aleksalatalo.logger.LoggerApp
+import com.aleksalatalo.logger.ui.StartRequest
 import com.aleksalatalo.logger.domain.ActivityLevel
 import com.aleksalatalo.logger.domain.NextLevel
 import com.aleksalatalo.logger.domain.activityLevel
@@ -116,6 +117,8 @@ fun ActivitiesScreen(
     onOpenSettings: () -> Unit,
     onManualEntry: (activityId: Long, description: String?) -> Unit,
     onStopped: (StoppedSession) -> Unit,
+    startRequest: StartRequest?,
+    onStartRequestHandled: () -> Unit,
     viewModel: ActivitiesViewModel = viewModel(factory = ActivitiesViewModel.Factory),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -129,6 +132,14 @@ fun ActivitiesScreen(
         }
     }
     var dialog by remember { mutableStateOf<DialogState?>(null) }
+    // Opened from a widget: show the start panel once the activity list has loaded.
+    LaunchedEffect(startRequest, state.loading) {
+        val request = startRequest ?: return@LaunchedEffect
+        if (state.loading) return@LaunchedEffect
+        val activity = state.sections.flatMap { it.activities }.firstOrNull { it.id == request.activityId }
+        if (activity != null) dialog = DialogState.Start(activity)
+        onStartRequestHandled()
+    }
     var menuOpen by remember { mutableStateOf(false) }
 
     // Ask for notification permission (Android 13+) the first time a session starts; start either way.

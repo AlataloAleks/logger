@@ -3,7 +3,6 @@ package com.aleksalatalo.logger.system
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
-import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -21,7 +20,6 @@ import com.aleksalatalo.logger.data.ActivityRepository
 import com.aleksalatalo.logger.data.db.ActivityEntity
 import com.aleksalatalo.logger.data.db.ActivityGroupEntity
 import com.aleksalatalo.logger.data.db.SessionEntity
-import com.aleksalatalo.logger.data.db.SessionMode
 import com.aleksalatalo.logger.data.db.SettingsEntity
 import com.aleksalatalo.logger.domain.SessionEngine
 import com.aleksalatalo.logger.domain.computeStats
@@ -133,32 +131,20 @@ class Widgets(
             val item = quick.getOrNull(i)
             views.setViewVisibility(button, if (item != null) View.VISIBLE else View.GONE)
             if (item != null) {
-                val (activity, last) = item
-                views.setTextViewText(button, "${activity.name}\n${modeHint(last)}")
-                views.setOnClickPendingIntent(button, startIntent(activity.id))
+                views.setTextViewText(button, item.name)
+                views.setOnClickPendingIntent(button, startIntent(item.id))
             }
         }
         return views
     }
 
-    /**
-     * Up to four activities, most used in the last 30 days first, each paired with its last
-     * session so a tap repeats how it was last tracked (e.g. a 2:00 timer).
-     */
-    private fun quickStart(all: List<ActivityEntity>, sessions: List<SessionEntity>): List<Pair<ActivityEntity, SessionEntity?>> {
+    /** Up to four activities, most used in the last 30 days first. */
+    private fun quickStart(all: List<ActivityEntity>, sessions: List<SessionEntity>): List<ActivityEntity> {
         val since = System.currentTimeMillis() - 30L * 86_400_000
         val recentCounts = sessions.filter { it.startedAt >= since }.groupingBy { it.activityId }.eachCount()
-        val lastByActivity = sessions.groupBy { it.activityId }.mapValues { (_, list) -> list.maxBy { it.startedAt } }
         return all.filter { !it.archived }
             .sortedWith(compareByDescending<ActivityEntity> { recentCounts[it.id] ?: 0 }.thenBy { it.sortOrder })
             .take(4)
-            .map { it to lastByActivity[it.id] }
-    }
-
-    private fun modeHint(last: SessionEntity?): String = when (last?.mode) {
-        SessionMode.TIMER -> "Timer ${formatClock(last.plannedSeconds ?: 0)}"
-        SessionMode.POMODORO -> "Pomodoro"
-        else -> "Stopwatch"
     }
 
     private fun heatmapViews(
@@ -233,11 +219,14 @@ class Widgets(
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
-    private fun startIntent(activityId: Long): PendingIntent = PendingIntent.getBroadcast(
+    /** Opens the app's start panel for the activity, where the mode is chosen. */
+    private fun startIntent(activityId: Long): PendingIntent = PendingIntent.getActivity(
         context,
-        // One distinct PendingIntent per activity.
-        activityId.toInt(),
-        Intent(context, WidgetStartReceiver::class.java).putExtra(WidgetStartReceiver.EXTRA_ACTIVITY_ID, activityId),
+        // One distinct PendingIntent per activity; offset from openApp's request codes.
+        1000 + activityId.toInt(),
+        Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            .putExtra(MainActivity.EXTRA_START_ACTIVITY, activityId),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 }
@@ -261,30 +250,5 @@ class HeatmapWidget : AppWidgetProvider() {
 
     override fun onDeleted(context: Context, ids: IntArray) {
         (context.applicationContext as LoggerApp).container.widgets.forget(ids)
-    }
-}
-
-/**
- * Quick-start button: starts the activity the way it was last tracked (stopwatch, same timer
- * length, or Pomodoro). Does nothing if another session started in the meantime.
- */
-class WidgetStartReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        val activityId = intent.getLongExtra(EXTRA_ACTIVITY_ID, -1).takeIf { it > 0 } ?: return
-        runAsync(context) {
-            val last = sessionEngine.history.first().map { it.session }
-                .filter { it.activityId == activityId }
-                .maxByOrNull { it.startedAt }
-            sessionEngine.start(
-                activityId = activityId,
-                description = null,
-                timerSeconds = last?.plannedSeconds?.takeIf { last.mode == SessionMode.TIMER },
-                pomodoro = last?.mode == SessionMode.POMODORO,
-            )
-        }
-    }
-
-    companion object {
-        const val EXTRA_ACTIVITY_ID = "activity_id"
     }
 }
