@@ -57,14 +57,16 @@ There is no store release. Build and install it yourself:
 ```bash
 git clone https://github.com/AlataloAleks/logger.git
 cd logger
+echo "signRelease.withDebugKey=true" >> local.properties
 ./gradlew installRelease
 ```
 
 Requirements: JDK 17 or newer, the Android SDK (platform 37, build tools 36), and an Android
-8.0+ phone with USB debugging enabled. Create `local.properties` with
-`sdk.dir=/path/to/Android/Sdk` if `ANDROID_HOME` is not set.
+8.0+ phone with USB debugging enabled. Add `sdk.dir=/path/to/Android/Sdk` to
+`local.properties` if `ANDROID_HOME` is not set.
 
-The release build is signed with the local debug key, which is fine for personal sideloading.
+The release build is unsigned by default, as F-Droid expects. The `signRelease.withDebugKey`
+line signs it with your local debug key, which is fine for personal sideloading.
 
 Two variants can be installed side by side:
 
@@ -123,6 +125,12 @@ The original requirements and design decisions are in [docs/PLAN.md](docs/PLAN.m
 ./gradlew testDebugUnitTest            # time rules and statistics (JVM)
 ./gradlew connectedDebugAndroidTest    # session engine, repository, backup (needs a device)
 ```
+
+## F-Droid
+
+The app is prepared for F-Droid: store texts and icon are in `fastlane/metadata/android/`,
+releases are tagged `vX.Y.Z` matching `versionName`, and a draft of the F-Droid metadata file is
+in [docs/fdroid/](docs/fdroid/com.aleksalatalo.logger.yml). Screenshots are still to be added.
 
 ## License
 

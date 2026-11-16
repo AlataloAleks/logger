@@ -1,0 +1,1 @@
+First release: stopwatch, timer, Pomodoro and manual entry; ongoing notification and on-time alerts; history and session editing; statistics with heatmap, week comparison, trends and streaks; running-session and heatmap widgets; JSON export and import.

@@ -1,0 +1,33 @@
+Logger tracks the time you spend on anything: planche holds, reading, programming, YouTube. Pick an activity, start, stop. It keeps an accurate record and turns it into heatmaps, streaks and trends.
+
+Single user, fully offline, no account, no ads, no tracking. The app has no internet permission.
+
+<b>Tracking</b>
+<ul>
+<li>Stopwatch, Timer, Pomodoro (work and break phases) and manual entry</li>
+<li>Records the actual time spent: stopping a 2:00 timer after 1:20 saves 1:20</li>
+<li>Optional descriptions; duration, start time and activity can be corrected later</li>
+<li>Keeps counting when the app is closed, the phone sleeps or restarts</li>
+<li>Ongoing notification with live time and a Stop button</li>
+<li>Timer and Pomodoro alerts on time, with sound and vibration</li>
+</ul>
+
+<b>Statistics</b>
+<ul>
+<li>12-month contribution heatmap per activity, group or all activities</li>
+<li>This week vs last week, 12-week and 12-month trends, streaks, active days</li>
+<li>All-time totals per activity</li>
+<li>Configurable day start (late sessions count on the previous day) and week start</li>
+</ul>
+
+<b>Widgets</b>
+<ul>
+<li>Running session with live time and Stop, or quick-start buttons for your most used activities</li>
+<li>Streak heatmap for an activity, a group or everything</li>
+</ul>
+
+<b>Your data</b>
+<ul>
+<li>Activities with colours, groups and archiving</li>
+<li>Export and import everything as a JSON file</li>
+</ul>

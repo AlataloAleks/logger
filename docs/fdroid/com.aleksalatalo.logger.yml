@@ -1,0 +1,29 @@
+# Draft of the F-Droid metadata file. When submitting, copy it to metadata/ in a fork of
+# https://gitlab.com/fdroid/fdroiddata, replace `commit` with the full hash of the release
+# commit (F-Droid asks for a hash, not a tag) and check it with `fdroid lint` and `fdroid build`.
+Categories:
+  - Time
+  - Sports & Health
+License: MIT
+AuthorName: Aleks Alatalo
+WebSite: https://aleksalatalo.com
+SourceCode: https://github.com/AlataloAleks/logger
+IssueTracker: https://github.com/AlataloAleks/logger/issues
+
+AutoName: Logger
+
+RepoType: git
+Repo: https://github.com/AlataloAleks/logger.git
+
+Builds:
+  - versionName: 0.1.0
+    versionCode: 1
+    commit: v0.1.0
+    subdir: app
+    gradle:
+      - yes
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.1.0
+CurrentVersionCode: 1

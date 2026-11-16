@@ -1,0 +1,1 @@
+Minimal time tracker with timers, Pomodoro, heatmaps and streaks

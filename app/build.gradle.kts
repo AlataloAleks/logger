@@ -1,8 +1,17 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.room)
+}
+
+/** Per-machine settings from the git-ignored local.properties (absent on build servers). */
+fun localProperty(key: String): String? {
+    val file = rootProject.file("local.properties")
+    if (!file.exists()) return null
+    return Properties().apply { file.inputStream().use { load(it) } }.getProperty(key)
 }
 
 android {
@@ -24,11 +33,14 @@ android {
         debug {
             applicationIdSuffix = ".debug" // app name overridden in src/debug/res
         }
-        // Release is the everyday build. Signed with the debug key for sideloading;
-        // a real signing key is only needed for publishing.
+        // Release is the everyday build. It is unsigned by default, as F-Droid expects (F-Droid
+        // signs its own builds). For sideloading, add `signRelease.withDebugKey=true` to
+        // local.properties to sign it with the local debug key.
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            if (localProperty("signRelease.withDebugKey") == "true") {
+                signingConfig = signingConfigs.getByName("debug")
+            }
         }
     }
 
