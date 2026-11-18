@@ -2,6 +2,7 @@ package com.aleksalatalo.logger.ui.stats
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -45,6 +47,7 @@ import java.time.format.DateTimeFormatter
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** Alpha of the series color for heatmap levels 1..4 (a single-hue sequential scale). */
 private val HEAT_ALPHA = listOf(0f, 0.3f, 0.5f, 0.75f, 1f)
@@ -181,8 +184,8 @@ private fun DrawScope.bar(left: Float, width: Float, baseline: Float, height: Fl
 }
 
 /**
- * Vertical bars with optional comparison bars drawn beside them in a lighter step of the same
- * hue. Tap a bar to read its value; labels are thinned to every [labelEvery]-th slot.
+ * Vertical bars with optional comparison bars drawn beside them, by default in a lighter step of
+ * the same hue. Tap a bar to read its value; labels are thinned to every [labelEvery]-th slot.
  */
 @Composable
 fun BarChart(
@@ -194,20 +197,22 @@ fun BarChart(
     valueName: String = "",
     labelEvery: Int = 1,
     readoutLabels: List<String> = labels,
+    compareColor: Color = color.copy(alpha = 0.35f),
 ) {
     val max = maxOf(values.maxOrNull() ?: 0, compare?.maxOrNull() ?: 0).coerceAtLeast(1)
     val labelColor = MaterialTheme.colorScheme.onSurfaceVariant
     val baselineColor = MaterialTheme.colorScheme.outlineVariant
     val labelStyle = MaterialTheme.typography.labelSmall
     val measurer = rememberTextMeasurer()
-    val compareColor = color.copy(alpha = 0.35f)
     var selected by remember(labels) { mutableStateOf<Int?>(null) }
 
     Column {
         Readout(
             selected?.let { i ->
                 buildString {
-                    append(readoutLabels[i]).append(": ").append(formatDuration(values[i]))
+                    append(readoutLabels[i]).append(": ")
+                    if (compare != null && valueName.isNotEmpty()) append(valueName).append(' ')
+                    append(formatDuration(values[i]))
                     if (compare != null) append("  ·  $compareName ${formatDuration(compare[i])}")
                 }
             } ?: "Tap a bar to see its value",
@@ -264,13 +269,19 @@ private fun LegendItem(color: Color, label: String) {
     }
 }
 
-/** One labelled horizontal bar per item; identity comes from the name, not only the color. */
+/**
+ * One labelled horizontal bar per item; identity comes from the name, not only the color.
+ * With [onClick], each item is tappable and reports its index.
+ */
 @Composable
-fun HorizontalBars(items: List<Triple<String, Color, Long>>) {
+fun HorizontalBars(items: List<Triple<String, Color, Long>>, onClick: ((Int) -> Unit)? = null) {
     val max = items.maxOfOrNull { it.third }?.coerceAtLeast(1) ?: 1
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        items.forEach { (name, color, seconds) ->
-            Column {
+    Column(verticalArrangement = Arrangement.spacedBy(if (onClick == null) 10.dp else 2.dp)) {
+        items.forEachIndexed { index, (name, color, seconds) ->
+            Column(
+                if (onClick == null) Modifier
+                else Modifier.clickable { onClick(index) }.padding(vertical = 4.dp),
+            ) {
                 Row {
                     Text(name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Text(formatDuration(seconds), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -283,6 +294,74 @@ fun HorizontalBars(items: List<Triple<String, Color, Long>>) {
                         .background(color, RoundedCornerShape(topEnd = 4.dp, bottomEnd = 4.dp)),
                 )
             }
+        }
+    }
+}
+
+/**
+ * Tiny 7-day bar glyph for a list row, scaled to its own maximum. Not interactive: the row's
+ * total carries the value, and the detail page has the full charts.
+ */
+@Composable
+fun Sparkline(values: List<Long>, color: Color, modifier: Modifier = Modifier) {
+    val baselineColor = MaterialTheme.colorScheme.outlineVariant
+    val max = (values.maxOrNull() ?: 0).coerceAtLeast(1)
+    Canvas(modifier.size(width = 44.dp, height = 20.dp)) {
+        if (values.isEmpty()) return@Canvas
+        val slot = size.width / values.size
+        val width = slot - 2.dp.toPx()
+        val baseline = size.height
+        values.forEachIndexed { i, v ->
+            bar(i * slot + 1.dp.toPx(), width, baseline, v * baseline / max, color)
+        }
+        drawLine(baselineColor, Offset(0f, baseline - 0.5.dp.toPx()), Offset(size.width, baseline - 0.5.dp.toPx()), 1.dp.toPx())
+    }
+}
+
+/**
+ * Single horizontal bar split into two parts, with a 2dp surface gap and 4dp rounded outer ends,
+ * followed by a legend that names each part with its value and share.
+ */
+@Composable
+fun SplitBar(first: Long, second: Long, firstName: String, secondName: String, firstColor: Color, secondColor: Color) {
+    val total = (first + second).coerceAtLeast(1)
+    val firstPct = (first * 100.0 / total).roundToInt()
+    val secondPct = if (second > 0) 100 - firstPct else 0
+    Column {
+        Canvas(Modifier.fillMaxWidth().height(12.dp)) {
+            val gap = 2.dp.toPx()
+            val r = CornerRadius(4.dp.toPx())
+            val split = size.width * first / total
+            fun part(left: Float, right: Float, color: Color, roundLeft: Boolean, roundRight: Boolean) {
+                if (right - left <= 0f) return
+                drawPath(
+                    Path().apply {
+                        addRoundRect(
+                            RoundRect(
+                                left = left, top = 0f, right = right, bottom = size.height,
+                                topLeftCornerRadius = if (roundLeft) r else CornerRadius.Zero,
+                                bottomLeftCornerRadius = if (roundLeft) r else CornerRadius.Zero,
+                                topRightCornerRadius = if (roundRight) r else CornerRadius.Zero,
+                                bottomRightCornerRadius = if (roundRight) r else CornerRadius.Zero,
+                            ),
+                        )
+                    },
+                    color,
+                )
+            }
+            when {
+                second == 0L -> part(0f, size.width, firstColor, roundLeft = true, roundRight = true)
+                first == 0L -> part(0f, size.width, secondColor, roundLeft = true, roundRight = true)
+                else -> {
+                    part(0f, split - gap / 2, firstColor, roundLeft = true, roundRight = false)
+                    part(split + gap / 2, size.width, secondColor, roundLeft = false, roundRight = true)
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            LegendItem(firstColor, "$firstName ${formatDuration(first)} · $firstPct%")
+            LegendItem(secondColor, "$secondName ${formatDuration(second)} · $secondPct%")
         }
     }
 }

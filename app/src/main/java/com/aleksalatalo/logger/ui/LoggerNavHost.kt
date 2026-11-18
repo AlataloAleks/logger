@@ -20,6 +20,7 @@ import com.aleksalatalo.logger.ui.history.HistoryScreen
 import com.aleksalatalo.logger.ui.running.RunningScreen
 import com.aleksalatalo.logger.ui.sessions.SessionEditorScreen
 import com.aleksalatalo.logger.ui.settings.SettingsScreen
+import com.aleksalatalo.logger.ui.stats.StatsDetailScreen
 import com.aleksalatalo.logger.ui.stats.StatsScreen
 import kotlinx.coroutines.launch
 
@@ -31,8 +32,13 @@ object Routes {
     const val RUNNING = "running"
     const val HISTORY = "history"
     const val STATS = "stats"
+    const val STATS_ACTIVITY = "stats/activity/{id}"
+    const val STATS_GROUP = "stats/group/{id}"
     const val SETTINGS = "settings"
     const val EDITOR = "editor?sessionId={sessionId}&activityId={activityId}&description={description}"
+
+    fun statsActivity(id: Long) = "stats/activity/$id"
+    fun statsGroup(id: Long) = "stats/group/$id"
 
     fun editSession(sessionId: Long) = "editor?sessionId=$sessionId"
 
@@ -99,7 +105,25 @@ fun LoggerNavHost(
             SettingsScreen(onBack = { nav.popBackStack() })
         }
         composable(Routes.STATS) {
-            StatsScreen(onBack = { nav.popBackStack() })
+            StatsScreen(
+                onBack = { nav.popBackStack() },
+                onOpenActivity = { nav.navigate(Routes.statsActivity(it)) },
+                onOpenGroup = { nav.navigate(Routes.statsGroup(it)) },
+            )
+        }
+        composable(Routes.STATS_ACTIVITY, arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+            StatsDetailScreen(
+                isGroup = false,
+                onBack = { nav.popBackStack() },
+                onOpenActivity = { nav.navigate(Routes.statsActivity(it)) },
+            )
+        }
+        composable(Routes.STATS_GROUP, arguments = listOf(navArgument("id") { type = NavType.LongType })) {
+            StatsDetailScreen(
+                isGroup = true,
+                onBack = { nav.popBackStack() },
+                onOpenActivity = { nav.navigate(Routes.statsActivity(it)) },
+            )
         }
         composable(Routes.HISTORY) {
             HistoryScreen(
