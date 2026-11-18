@@ -123,3 +123,67 @@ fun heatLevels(values: Collection<Long>): (Long) -> Int {
         }
     }
 }
+
+/** Focus vs Leisure time. Weeks start on the configured week start. */
+data class Balance(
+    val focusThisWeek: Long,
+    val leisureThisWeek: Long,
+    val focusLastWeek: Long,
+    val leisureLastWeek: Long,
+    /** Last 12 weeks, oldest first; labels are each week's start as "d.M.". */
+    val weeks: List<Bar>,
+    val leisureWeeks: List<Long>,
+)
+
+fun computeBalance(
+    entries: List<DayEntry>,
+    leisureIds: Set<Long>,
+    today: LocalDate,
+    weekStart: DayOfWeek,
+): Balance {
+    val thisWeekStart = weekStartOf(today, weekStart)
+    fun sum(from: LocalDate, leisure: Boolean) = entries
+        .filter { (it.activityId in leisureIds) == leisure && !it.day.isBefore(from) && it.day.isBefore(from.plusWeeks(1)) }
+        .sumOf { it.seconds }
+    val starts = (11 downTo 0).map { thisWeekStart.minusWeeks(it.toLong()) }
+    return Balance(
+        focusThisWeek = sum(thisWeekStart, false),
+        leisureThisWeek = sum(thisWeekStart, true),
+        focusLastWeek = sum(thisWeekStart.minusWeeks(1), false),
+        leisureLastWeek = sum(thisWeekStart.minusWeeks(1), true),
+        weeks = starts.map { Bar("${it.dayOfMonth}.${it.monthValue}.", sum(it, false)) },
+        leisureWeeks = starts.map { sum(it, true) },
+    )
+}
+
+/** Period chosen on the statistics overview. */
+enum class StatsPeriod(val label: String) { WEEK("Week"), MONTH("Month"), YEAR("Year"), ALL("All") }
+
+/** Inclusive date range of [period] containing [today], and the same-length range before it (null for ALL). */
+fun periodRanges(period: StatsPeriod, today: LocalDate, weekStart: DayOfWeek): Pair<ClosedRange<LocalDate>, ClosedRange<LocalDate>?> =
+    when (period) {
+        StatsPeriod.WEEK -> {
+            val start = weekStartOf(today, weekStart)
+            (start..start.plusDays(6)) to (start.minusWeeks(1)..start.minusDays(1))
+        }
+        StatsPeriod.MONTH -> {
+            val start = today.withDayOfMonth(1)
+            val previous = start.minusMonths(1)
+            (start..start.plusMonths(1).minusDays(1)) to (previous..start.minusDays(1))
+        }
+        StatsPeriod.YEAR -> {
+            val start = today.withDayOfYear(1)
+            (start..start.plusYears(1).minusDays(1)) to (start.minusYears(1)..start.minusDays(1))
+        }
+        StatsPeriod.ALL -> (LocalDate.MIN..LocalDate.MAX) to null
+    }
+
+/** Seconds per activity within [range]. */
+fun totalsIn(entries: List<DayEntry>, range: ClosedRange<LocalDate>): Map<Long, Long> =
+    entries.filter { it.day in range }.groupBy { it.activityId }.mapValues { (_, l) -> l.sumOf { it.seconds } }
+
+/** Seconds per day for the last [days] days ending [today], oldest first, for the given activities. */
+fun recentDays(entries: List<DayEntry>, activityIds: Set<Long>, today: LocalDate, days: Int = 7): List<Long> {
+    val byDay = entries.filter { it.activityId in activityIds }.groupBy { it.day }.mapValues { (_, l) -> l.sumOf { it.seconds } }
+    return (days - 1 downTo 0).map { byDay[today.minusDays(it.toLong())] ?: 0L }
+}

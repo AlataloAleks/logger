@@ -16,6 +16,7 @@ import com.aleksalatalo.logger.data.db.SettingsEntity
 import com.aleksalatalo.logger.domain.RunningSession
 import com.aleksalatalo.logger.domain.ActivityLevel
 import com.aleksalatalo.logger.domain.activityLevels
+import com.aleksalatalo.logger.domain.leisureActivityIds
 import com.aleksalatalo.logger.domain.dayEntries
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -147,7 +148,9 @@ class ActivitiesViewModel(
         val previous = previousLevels
         previousLevels = current
         if (previous == null) return
-        val ups = current.filter { (id, l) -> l.level > (previous[id]?.level ?: 1) }
+        // Leisure activities have no levels, so they never level up.
+        val leisure = leisureActivityIds(repository.activities.first(), repository.groups.first())
+        val ups = current.filter { (id, l) -> id !in leisure && l.level > (previous[id]?.level ?: 1) }
         // Several at once means an import or bulk change, not something to celebrate.
         val (id, level) = ups.entries.singleOrNull() ?: return
         val name = repository.activities.first().firstOrNull { it.id == id }?.name ?: return
@@ -162,12 +165,12 @@ class ActivitiesViewModel(
         showArchived.value = !showArchived.value
     }
 
-    fun saveActivity(id: Long?, name: String, groupId: Long?, color: Int, onResult: (NameError?) -> Unit) {
+    fun saveActivity(id: Long?, name: String, groupId: Long?, color: Int, leisure: Boolean?, onResult: (NameError?) -> Unit) {
         viewModelScope.launch {
             val error = if (id == null) {
-                repository.createActivity(name, groupId, color)
+                repository.createActivity(name, groupId, color, leisure)
             } else {
-                repository.updateActivity(id, name, groupId, color)
+                repository.updateActivity(id, name, groupId, color, leisure)
             }
             onResult(error)
         }
@@ -187,6 +190,10 @@ class ActivitiesViewModel(
 
     fun createGroup(name: String, onResult: (NameError?) -> Unit) {
         viewModelScope.launch { onResult(repository.createGroup(name)) }
+    }
+
+    fun setGroupLeisure(group: ActivityGroupEntity, leisure: Boolean) {
+        viewModelScope.launch { repository.setGroupLeisure(group, leisure) }
     }
 
     fun renameGroup(group: ActivityGroupEntity, name: String, onResult: (NameError?) -> Unit) {

@@ -26,6 +26,7 @@ import com.aleksalatalo.logger.domain.computeStats
 import com.aleksalatalo.logger.domain.dayEntries
 import com.aleksalatalo.logger.domain.formatClock
 import com.aleksalatalo.logger.domain.heatLevels
+import com.aleksalatalo.logger.domain.leisureActivityIds
 import com.aleksalatalo.logger.domain.logicalDate
 import com.aleksalatalo.logger.domain.phaseLabel
 import com.aleksalatalo.logger.domain.weekStartOf
@@ -158,18 +159,19 @@ class Widgets(
         val source = heatmapSource(widgetId)
         val activity = (source as? HeatmapSource.Activity)?.let { src -> all.firstOrNull { it.id == src.id } }
         val group = (source as? HeatmapSource.Group)?.let { src -> groups.firstOrNull { it.id == src.id } }
-        val included: Set<Long>? = when {
+        val included: Set<Long> = when {
             activity != null -> setOf(activity.id)
             group != null -> all.filter { it.groupId == group.id }.map { it.id }.toSet()
-            else -> null
+            // "All activities" means Focus time: leisure is kept out, as in Statistics.
+            else -> all.map { it.id }.toSet() - leisureActivityIds(all, groups)
         }
-        val entries = dayEntries(sessions, s).filter { included == null || it.activityId in included }
+        val entries = dayEntries(sessions, s).filter { it.activityId in included }
         val weekStart = DayOfWeek.of(s.weekStart)
         val today = logicalDate(System.currentTimeMillis(), ZoneId.systemDefault().id, s.dayStartHour)
         val stats = computeStats(entries, today, weekStart)
 
         val views = RemoteViews(context.packageName, R.layout.widget_heatmap)
-        views.setTextViewText(R.id.title, activity?.name ?: group?.name ?: "All activities")
+        views.setTextViewText(R.id.title, activity?.name ?: group?.name ?: "Focus")
         views.setTextViewText(
             R.id.streak,
             "Streak ${stats.currentStreak} ${if (stats.currentStreak == 1) "day" else "days"}",

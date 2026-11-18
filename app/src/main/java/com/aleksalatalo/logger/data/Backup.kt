@@ -80,7 +80,7 @@ class Backup(private val db: AppDatabase) {
 
     companion object {
         const val FORMAT = "logger-backup"
-        const val VERSION = 1
+        const val VERSION = 2
 
         fun toJson(d: BackupData, exportedAt: Long): String = JSONObject().apply {
             put("format", FORMAT)
@@ -96,7 +96,7 @@ class Backup(private val db: AppDatabase) {
                         .put("pomoLongEvery", s.pomoLongEvery),
                 )
             }
-            put("groups", JSONArray(d.groups.map { JSONObject().put("id", it.id).put("name", it.name).put("sortOrder", it.sortOrder) }))
+            put("groups", JSONArray(d.groups.map { JSONObject().put("id", it.id).put("name", it.name).put("sortOrder", it.sortOrder).put("leisure", it.leisure) }))
             put(
                 "activities",
                 JSONArray(
@@ -104,6 +104,7 @@ class Backup(private val db: AppDatabase) {
                         JSONObject().put("id", it.id).put("name", it.name).putOpt("groupId", it.groupId)
                             .put("color", it.color).put("archived", it.archived).put("sortOrder", it.sortOrder)
                             .put("createdAt", it.createdAt)
+                            .put("leisure", it.leisure ?: JSONObject.NULL)
                     },
                 ),
             )
@@ -149,7 +150,7 @@ class Backup(private val db: AppDatabase) {
                     )
                 }
                 val groups = root.getJSONArray("groups").objects().map {
-                    ActivityGroupEntity(it.getLong("id"), it.getString("name"), it.getInt("sortOrder"))
+                    ActivityGroupEntity(it.getLong("id"), it.getString("name"), it.getInt("sortOrder"), it.optBoolean("leisure", false))
                 }
                 val activities = root.getJSONArray("activities").objects().map {
                     ActivityEntity(
@@ -160,6 +161,7 @@ class Backup(private val db: AppDatabase) {
                         archived = it.getBoolean("archived"),
                         sortOrder = it.getInt("sortOrder"),
                         createdAt = it.getLong("createdAt"),
+                        leisure = if (it.isNull("leisure")) null else it.getBoolean("leisure"),
                     )
                 }
                 val sessions = root.getJSONArray("sessions").objects().map {

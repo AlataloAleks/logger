@@ -8,6 +8,7 @@ import com.aleksalatalo.logger.data.db.SettingsEntity
 import com.aleksalatalo.logger.domain.SessionEngine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -37,6 +38,8 @@ class BackupTest {
         val sport = source.activityGroupDao().observeAll().first().single().id
         repo.createActivity("Planche", sport, 0xFFE53935.toInt())
         repo.createActivity("Reading", null, 0xFF1E88E5.toInt())
+        source.openHelper.writableDatabase.execSQL("UPDATE activity_group SET leisure = 1")
+        source.openHelper.writableDatabase.execSQL("UPDATE activity SET leisure = 0 WHERE name = 'Planche'")
         source.settingsDao().upsert(SettingsEntity(dayStartHour = 3, countBreaks = true))
         val engine = SessionEngine(source, clock = { now }, zone = { ZoneId.of("Europe/Helsinki") })
         engine.start(1, "Holds \"with\" quotes\nand a newline", timerSeconds = 120)
@@ -62,6 +65,31 @@ class BackupTest {
         assertEquals(2, restored.activities.size)
         assertEquals(3, restored.sessions.size)
         assertTrue(restored.phases.size >= 2)
+        assertTrue(restored.groups.single().leisure)
+        assertEquals(false, restored.activities.single { it.name == "Planche" }.leisure)
+        assertEquals(null, restored.activities.single { it.name == "Reading" }.leisure)
+    }
+
+    @Test
+    fun versionOneFileImportsWithDefaults() = runTest {
+        val v1 = JSONObject(Backup(source).exportJson()).apply {
+            put("version", 1)
+            getJSONArray("groups").let { a -> for (i in 0 until a.length()) a.getJSONObject(i).remove("leisure") }
+            getJSONArray("activities").let { a -> for (i in 0 until a.length()) a.getJSONObject(i).remove("leisure") }
+        }.toString()
+        val restored = Backup(target).importJson(v1)
+        assertTrue(restored.groups.all { !it.leisure })
+        assertTrue(restored.activities.all { it.leisure == null })
+    }
+
+    @Test
+    fun newerVersionIsRejected() = runTest {
+        val v3 = JSONObject(Backup(source).exportJson()).put("version", 3).toString()
+        try {
+            Backup(target).importJson(v3)
+            fail("Expected InvalidBackupException")
+        } catch (_: InvalidBackupException) {
+        }
     }
 
     @Test

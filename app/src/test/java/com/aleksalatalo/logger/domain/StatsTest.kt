@@ -77,4 +77,32 @@ class StatsTest {
         val level = heatLevels(listOf(0L, 10, 20, 30, 40, 1000))
         assertEquals(listOf(0, 1, 1, 2, 3, 4), listOf(0L, 10, 20, 30, 40, 1000).map(level))
     }
+
+    @Test
+    fun balanceSplitsFocusAndLeisure() {
+        val entries = listOf(
+            e(today, 600, activity = 1),
+            e(today, 300, activity = 2),
+            e(today.minusWeeks(1), 100, activity = 2),
+        )
+        val b = computeBalance(entries, leisureIds = setOf(2), today = today, weekStart = DayOfWeek.MONDAY)
+        assertEquals(600L, b.focusThisWeek)
+        assertEquals(300L, b.leisureThisWeek)
+        assertEquals(100L, b.leisureLastWeek)
+        assertEquals(600L, b.weeks.last().seconds)
+        assertEquals(listOf(100L, 300L), b.leisureWeeks.takeLast(2))
+    }
+
+    @Test
+    fun periodRangesAndTotals() {
+        val (week, previousWeek) = periodRanges(StatsPeriod.WEEK, today, DayOfWeek.MONDAY)
+        assertEquals(LocalDate.of(2026, 11, 16)..LocalDate.of(2026, 11, 22), week)
+        assertEquals(LocalDate.of(2026, 11, 9)..LocalDate.of(2026, 11, 15), previousWeek)
+        val (month, previousMonth) = periodRanges(StatsPeriod.MONTH, today, DayOfWeek.MONDAY)
+        assertEquals(LocalDate.of(2026, 11, 1)..LocalDate.of(2026, 11, 30), month)
+        assertEquals(LocalDate.of(2026, 10, 1)..LocalDate.of(2026, 10, 31), previousMonth)
+        val entries = listOf(e(today, 60, 1), e(LocalDate.of(2026, 11, 10), 30, 1), e(today, 5, 2))
+        assertEquals(mapOf(1L to 60L, 2L to 5L), totalsIn(entries, week))
+        assertEquals(listOf(0L, 0L, 0L, 0L, 0L, 0L, 60L), recentDays(entries, setOf(1), today))
+    }
 }

@@ -11,6 +11,8 @@ data class ActivityGroupEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val sortOrder: Int = 0,
+    /** Leisure groups (games, videos...) are kept apart from Focus time in statistics. */
+    @ColumnInfo(defaultValue = "0") val leisure: Boolean = false,
 )
 
 @Entity(
@@ -34,6 +36,8 @@ data class ActivityEntity(
     val archived: Boolean = false,
     val sortOrder: Int = 0,
     val createdAt: Long,
+    /** Focus (false) or Leisure (true); null follows the activity's group. */
+    val leisure: Boolean? = null,
 )
 
 enum class SessionMode { STOPWATCH, TIMER, POMODORO, MANUAL }

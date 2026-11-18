@@ -28,6 +28,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import com.aleksalatalo.logger.LoggerApp
+import com.aleksalatalo.logger.domain.leisureActivityIds
 import com.aleksalatalo.logger.ui.StartRequest
 import com.aleksalatalo.logger.domain.ActivityLevel
 import com.aleksalatalo.logger.domain.NextLevel
@@ -124,6 +125,9 @@ fun ActivitiesScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val pomodoroDefaults by viewModel.pomodoroDefaults.collectAsStateWithLifecycle()
     val levels by viewModel.levels.collectAsStateWithLifecycle()
+    val leisureIds = remember(state) {
+        leisureActivityIds(state.sections.flatMap { it.activities } + state.archived, state.groups)
+    }
     val haptics = LocalHapticFeedback.current
     LaunchedEffect(Unit) {
         viewModel.levelUps.collect { message ->
@@ -229,7 +233,7 @@ fun ActivitiesScreen(
                     items(section.activities, key = { it.id }) { activity ->
                         ActivityRow(
                             activity = activity,
-                            level = levels[activity.id] ?: NO_TIME_LEVEL,
+                            level = (levels[activity.id] ?: NO_TIME_LEVEL).takeIf { activity.id !in leisureIds },
                             onClick = { dialog = DialogState.Start(activity) },
                             onEdit = { dialog = DialogState.EditActivity(activity) },
                             onArchiveToggle = { viewModel.setArchived(activity, true) },
@@ -242,7 +246,7 @@ fun ActivitiesScreen(
                     items(state.archived, key = { it.id }) { activity ->
                         ActivityRow(
                             activity = activity,
-                            level = levels[activity.id] ?: NO_TIME_LEVEL,
+                            level = (levels[activity.id] ?: NO_TIME_LEVEL).takeIf { activity.id !in leisureIds },
                             onClick = { dialog = DialogState.EditActivity(activity) },
                             onEdit = { dialog = DialogState.EditActivity(activity) },
                             onArchiveToggle = { viewModel.setArchived(activity, false) },
@@ -260,8 +264,8 @@ fun ActivitiesScreen(
             activity = d.activity,
             groups = state.groups,
             defaultColor = ActivityPalette[state.activityCount % ActivityPalette.size],
-            onSave = { name, groupId, color, onError ->
-                viewModel.saveActivity(d.activity?.id, name, groupId, color) { error ->
+            onSave = { name, groupId, color, leisure, onError ->
+                viewModel.saveActivity(d.activity?.id, name, groupId, color, leisure) { error ->
                     if (error == null) dialog = null else onError(error)
                 }
             },
@@ -282,6 +286,7 @@ fun ActivitiesScreen(
             groups = state.groups,
             onCreate = viewModel::createGroup,
             onRename = viewModel::renameGroup,
+            onSetLeisure = viewModel::setGroupLeisure,
             onDelete = viewModel::deleteGroup,
             onDismiss = { dialog = null },
         )
@@ -463,7 +468,8 @@ private fun LevelBadge(color: Int, level: ActivityLevel) {
 @Composable
 private fun ActivityRow(
     activity: ActivityEntity,
-    level: ActivityLevel,
+    /** null for a Leisure activity: no levels. */
+    level: ActivityLevel?,
     onClick: () -> Unit,
     onEdit: () -> Unit,
     onArchiveToggle: () -> Unit,
@@ -472,9 +478,15 @@ private fun ActivityRow(
     var menuOpen by remember { mutableStateOf(false) }
     ListItem(
         modifier = Modifier.clickable(onClick = onClick).alpha(if (activity.archived) 0.6f else 1f),
-        leadingContent = { LevelBadge(activity.color, level) },
+        leadingContent = {
+            if (level != null) {
+                LevelBadge(activity.color, level)
+            } else {
+                Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) { ColorDot(activity.color) }
+            }
+        },
         headlineContent = { Text(activity.name) },
-        supportingContent = { Text(nextLevelText(level)) },
+        supportingContent = { Text(if (level != null) nextLevelText(level) else "Leisure") },
         trailingContent = {
             Box {
                 IconButton(onClick = { menuOpen = true }) {
@@ -503,12 +515,14 @@ private fun ActivityEditorDialog(
     activity: ActivityEntity?,
     groups: List<ActivityGroupEntity>,
     defaultColor: Int,
-    onSave: (name: String, groupId: Long?, color: Int, onError: (NameError) -> Unit) -> Unit,
+    onSave: (name: String, groupId: Long?, color: Int, leisure: Boolean?, onError: (NameError) -> Unit) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var name by remember { mutableStateOf(activity?.name ?: "") }
     var groupId by remember { mutableStateOf(activity?.groupId?.takeIf { id -> groups.any { it.id == id } }) }
     var color by remember { mutableStateOf(activity?.color ?: defaultColor) }
+    // null follows the group (or Focus without a group).
+    var leisure by remember { mutableStateOf(activity?.leisure) }
     var error by remember { mutableStateOf<NameError?>(null) }
 
     AlertDialog(
@@ -540,6 +554,34 @@ private fun ActivityEditorDialog(
                         }
                     }
                 }
+                Text("Type", style = MaterialTheme.typography.labelLarge)
+                val group = groups.firstOrNull { it.id == groupId }
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (group != null) {
+                        item {
+                            FilterChip(
+                                selected = leisure == null,
+                                onClick = { leisure = null },
+                                label = { Text("As group (${if (group.leisure) "Leisure" else "Focus"})") },
+                            )
+                        }
+                    }
+                    item {
+                        FilterChip(
+                            selected = leisure == false || (group == null && leisure == null),
+                            onClick = { leisure = if (group == null) null else false },
+                            label = { Text("Focus") },
+                        )
+                    }
+                    item {
+                        FilterChip(selected = leisure == true, onClick = { leisure = true }, label = { Text("Leisure") })
+                    }
+                }
+                Text(
+                    "Leisure time (games, videos) is kept apart from Focus statistics and has no levels.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 Text("Color", style = MaterialTheme.typography.labelLarge)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     ActivityPalette.chunked(5).forEach { row ->
@@ -566,7 +608,7 @@ private fun ActivityEditorDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(name, groupId, color) { error = it } }) { Text("Save") }
+            TextButton(onClick = { onSave(name, groupId, color, leisure) { error = it } }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )
@@ -578,6 +620,7 @@ private fun GroupsDialog(
     groups: List<ActivityGroupEntity>,
     onCreate: (String, (NameError?) -> Unit) -> Unit,
     onRename: (ActivityGroupEntity, String, (NameError?) -> Unit) -> Unit,
+    onSetLeisure: (ActivityGroupEntity, Boolean) -> Unit,
     onDelete: (ActivityGroupEntity) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -596,6 +639,11 @@ private fun GroupsDialog(
                     groups.forEach { group ->
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                             Text(group.name, modifier = Modifier.weight(1f))
+                            FilterChip(
+                                selected = group.leisure,
+                                onClick = { onSetLeisure(group, !group.leisure) },
+                                label = { Text("Leisure") },
+                            )
                             IconButton(onClick = { renaming = group }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Rename ${group.name}")
                             }

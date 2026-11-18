@@ -19,7 +19,7 @@ class ActivityRepository(
     val groups: Flow<List<ActivityGroupEntity>> = groupDao.observeAll()
 
     /** Returns null on success. */
-    suspend fun createActivity(name: String, groupId: Long?, color: Int): NameError? {
+    suspend fun createActivity(name: String, groupId: Long?, color: Int, leisure: Boolean? = null): NameError? {
         val clean = name.trim()
         validateName(clean, excludeId = null)?.let { return it }
         activityDao.insert(
@@ -27,6 +27,7 @@ class ActivityRepository(
                 name = clean,
                 groupId = groupId,
                 color = color,
+                leisure = leisure,
                 sortOrder = activityDao.nextSortOrder(),
                 createdAt = clock(),
             ),
@@ -35,11 +36,11 @@ class ActivityRepository(
     }
 
     /** Returns null on success. */
-    suspend fun updateActivity(id: Long, name: String, groupId: Long?, color: Int): NameError? {
+    suspend fun updateActivity(id: Long, name: String, groupId: Long?, color: Int, leisure: Boolean? = null): NameError? {
         val existing = activityDao.get(id) ?: return null
         val clean = name.trim()
         validateName(clean, excludeId = id)?.let { return it }
-        activityDao.update(existing.copy(name = clean, groupId = groupId, color = color))
+        activityDao.update(existing.copy(name = clean, groupId = groupId, color = color, leisure = leisure))
         return null
     }
 
@@ -57,10 +58,10 @@ class ActivityRepository(
     }
 
     /** Returns null on success. */
-    suspend fun createGroup(name: String): NameError? {
+    suspend fun createGroup(name: String, leisure: Boolean = false): NameError? {
         val clean = name.trim()
         if (clean.isEmpty()) return NameError.BLANK
-        groupDao.insert(ActivityGroupEntity(name = clean, sortOrder = groupDao.nextSortOrder()))
+        groupDao.insert(ActivityGroupEntity(name = clean, sortOrder = groupDao.nextSortOrder(), leisure = leisure))
         return null
     }
 
@@ -71,6 +72,8 @@ class ActivityRepository(
         groupDao.update(group.copy(name = clean))
         return null
     }
+
+    suspend fun setGroupLeisure(group: ActivityGroupEntity, leisure: Boolean) = groupDao.update(group.copy(leisure = leisure))
 
     /** Activities in the group become ungrouped (foreign key SET NULL). */
     suspend fun deleteGroup(group: ActivityGroupEntity) = groupDao.delete(group)

@@ -54,7 +54,8 @@ class WidgetConfigActivity : ComponentActivity() {
                         item {
                             ListItem(
                                 modifier = Modifier.clickable { choose(widgetId, HeatmapSource.All) },
-                                headlineContent = { Text("All activities") },
+                                headlineContent = { Text("All Focus activities") },
+                                supportingContent = { Text("Everything except Leisure") },
                             )
                         }
                         if (groupList.isNotEmpty()) {
